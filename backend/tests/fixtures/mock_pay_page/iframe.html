@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Mock Pay iframe</title></head>
+<body>
+  <form id="card-form">
+    <input id="card-number" name="card_number" data-testid="card-number" placeholder="Card number" />
+    <input id="expiry" name="expiry" data-testid="expiry" placeholder="MM/YY" />
+    <input id="cvv" name="cvv" data-testid="cvv" placeholder="CVV" />
+    <button type="button" id="submit-pay" data-testid="submit">Pay</button>
+  </form>
+  <div id="result" data-testid="result"></div>
+  <div id="threeds-challenge" data-testid="threeds" style="display:none">3DS Challenge</div>
+  <script>
+    function show(mode) {
+      var r = document.getElementById('result');
+      var t = document.getElementById('threeds-challenge');
+      t.style.display = 'none';
+      r.textContent = '';
+      r.className = '';
+      if (mode === 'SUCCESS') { r.textContent = 'Payment SUCCESS'; r.className = 'result-success'; }
+      else if (mode === 'DECLINED') { r.textContent = 'CARD DECLINED'; r.className = 'result-declined'; }
+      else if (mode === '3DS') { t.style.display = 'block'; r.textContent = '3DS required'; r.className = 'result-threeds'; }
+      else if (mode === 'TIMEOUT') { r.textContent = 'TIMEOUT waiting for issuer'; r.className = 'result-timeout'; }
+    }
+    var params = new URLSearchParams(location.search);
+    var preset = params.get('result');
+    document.getElementById('submit-pay').addEventListener('click', function () {
+      var mode = preset || document.body.getAttribute('data-result') || 'SUCCESS';
+      show(mode);
+    });
+    ['SUCCESS','DECLINED','3DS','TIMEOUT'].forEach(function (m) {
+      var b = document.createElement('button');
+      b.type = 'button'; b.textContent = 'Force ' + m; b.dataset.result = m;
+      b.addEventListener('click', function () { show(m); });
+      document.body.appendChild(b);
+    });
+    if (preset) { /* wait for submit */ }
+  </script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Mock Pay Main</title></head>
+<body>
+  <h1>Checkout</h1>
+  <iframe id="pay-iframe" name="pay-iframe" data-testid="pay-iframe" src="iframe.html" width="480" height="360"></iframe>
+  <script>
+    (function () {
+      var q = location.search || "";
+      var iframe = document.getElementById("pay-iframe");
+      iframe.src = "iframe.html" + q;
+    })();
+  </script>
+</body>
+</html>

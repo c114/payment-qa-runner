@@ -1,0 +1,4 @@
+# email:password
+qa.student01@mail.qa-internal.test:QaPass_001!
+qa.student02@mail.qa-internal.test:QaPass_002!
+qa.student03@mail.qa-internal.test:QaPass_003!

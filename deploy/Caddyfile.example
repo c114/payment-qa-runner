@@ -1,0 +1,38 @@
+# Example Caddy reverse proxy for Payment QA Runner
+# Install Caddy on the VPS host (not required in docker-compose by default).
+#
+# WITH DOMAIN (automatic HTTPS):
+#   Set DOMAIN=qa.example.com and point DNS A/AAAA to this server.
+#   Frontend: https://qa.example.com
+#   API same-origin: https://qa.example.com/api → backend:8000
+#   Optionally set NEXT_PUBLIC_API_URL=https://qa.example.com (or empty for relative /api)
+#
+# WITHOUT DOMAIN:
+#   Use http://SERVER_IP:3000 (frontend) and http://SERVER_IP:8000 (API) directly.
+#   Or bind Caddy on :80 to proxy both.
+
+# --- Option A: domain with automatic HTTPS ---
+{$DOMAIN:qa.example.com} {
+	encode gzip
+
+	# API → backend
+	handle /api* {
+		reverse_proxy 127.0.0.1:8000
+	}
+
+	# Frontend
+	handle {
+		reverse_proxy 127.0.0.1:3000
+	}
+}
+
+# --- Option B: IP-only HTTP on port 80 ---
+# :80 {
+# 	encode gzip
+# 	handle /api* {
+# 		reverse_proxy 127.0.0.1:8000
+# 	}
+# 	handle {
+# 		reverse_proxy 127.0.0.1:3000
+# 	}
+# }

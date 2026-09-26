@@ -1,0 +1,4 @@
+# host:port or host:port:user:pass
+127.0.0.1:1080
+10.0.0.5:1080:proxyuser:proxypass
+socks5://proxyuser:proxypass@10.0.0.6:9050

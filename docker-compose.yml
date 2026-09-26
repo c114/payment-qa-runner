@@ -1,0 +1,110 @@
+# Payment QA Runner — SQLite default shares ./data for backend+worker.
+# Postgres profile: set DATABASE_URL=postgresql+psycopg2://qa:qa@postgres:5432/payment_qa
+#   and do NOT leave sqlite:/// defaults conflicting. Example:
+#   DATABASE_URL=postgresql+psycopg2://qa:qa@postgres:5432/payment_qa docker compose --profile postgres up -d
+#
+# Frontend NEXT_PUBLIC_API_URL is build-time / browser-facing.
+#   Local: http://localhost:8000
+#   VPS with domain + reverse proxy (see deploy/Caddyfile.example): https://api.example.com
+#   Or same-origin via Caddy: leave API on /api proxied to backend:8000 and set NEXT_PUBLIC_API_URL=""
+# Optional Caddy is NOT in this compose; use deploy/Caddyfile.example with a host Caddy or profile later.
+
+networks:
+  pqa:
+    name: payment-qa-net
+    driver: bridge
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-sqlite:////data/payment_qa.db}
+      SCREENSHOT_DIR: /data/screenshots
+      REPORT_DIR: /data/reports
+      LOG_DIR: /data/logs
+      PLAYWRIGHT_MOCK: ${PLAYWRIGHT_MOCK:-1}
+      LIVE_TESTING_ENABLED: ${LIVE_TESTING_ENABLED:-false}
+    volumes:
+      - ./data:/data
+      - ./docs:/app/docs:ro
+    ports:
+      - "8000:8000"
+    networks:
+      - pqa
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  worker:
+    build:
+      context: .
+      dockerfile: worker/Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-sqlite:////data/payment_qa.db}
+      PLAYWRIGHT_MOCK: ${PLAYWRIGHT_MOCK:-1}
+      LIVE_TESTING_ENABLED: ${LIVE_TESTING_ENABLED:-false}
+      SCREENSHOT_DIR: /data/screenshots
+      REPORT_DIR: /data/reports
+      LOG_DIR: /data/logs
+      WORKER_HEARTBEAT_FILE: /data/logs/worker.heartbeat
+    volumes:
+      - ./data:/data
+    networks:
+      - pqa
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /data/logs/worker.heartbeat && find /data/logs/worker.heartbeat -mmin -1 | grep -q ."]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        # Browser-facing API base. For VPS+Caddy same-origin, use empty or https://qa.example.com
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    ports:
+      - "3000:3000"
+    networks:
+      - pqa
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  postgres:
+    image: postgres:16-alpine
+    profiles: ["postgres"]
+    environment:
+      POSTGRES_USER: qa
+      POSTGRES_PASSWORD: qa
+      POSTGRES_DB: payment_qa
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - pqa
+    # When using this profile, set DATABASE_URL to postgres (see top comment). Do not mix with sqlite default.
+
+volumes:
+  pgdata:

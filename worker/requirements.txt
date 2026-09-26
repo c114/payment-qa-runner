@@ -1,0 +1,3 @@
+# Worker shares backend deps + playwright
+-r ../backend/requirements.txt
+playwright==1.49.1
