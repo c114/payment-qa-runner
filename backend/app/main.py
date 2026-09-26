@@ -31,11 +31,22 @@ async def lifespan(_app: FastAPI):
 
 
 settings = get_settings()
-app = FastAPI(title="Payment QA Runner", version="1.1.0", lifespan=lifespan)
+app = FastAPI(title="Payment QA Runner", version="1.2.0", lifespan=lifespan)
+
+# Same-Origin deploy: browser → frontend:3000/api → backend (server-side). CORS not required
+# for that path. Keep localhost + optional CORS_ORIGINS for direct API / local next dev.
+# If CORS_ORIGINS is empty or "*", allow all (safe for API behind Same-Origin proxy).
+_cors = settings.cors_origin_list
+if not _cors or _cors == ["*"]:
+    _cors_origins = ["*"]
+    _cors_creds = False
+else:
+    _cors_origins = _cors
+    _cors_creds = True
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origin_list or ["*"],
-    allow_credentials=True,
+    allow_origins=_cors_origins,
+    allow_credentials=_cors_creds,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -44,4 +55,9 @@ app.include_router(router, prefix="/api")
 
 @app.get("/")
 def root():
-    return {"name": "Payment QA Runner", "docs": "/docs", "health": "/api/health"}
+    return {
+        "name": "Payment QA Runner",
+        "version": "1.2.0",
+        "docs": "/docs",
+        "health": "/api/health",
+    }

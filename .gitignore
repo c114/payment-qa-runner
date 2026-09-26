@@ -14,7 +14,6 @@ venv/
 .mypy_cache/
 .coverage
 htmlcov/
-
 # Node
 node_modules/
 frontend/.next/
@@ -22,26 +21,24 @@ frontend/out/
 frontend/dist/
 *.tsbuildinfo
 npm-debug.log*
-
 # Data / runtime
 data/
-logs/
-reports/
-screenshots/
+/logs/
+/reports/
+/screenshots/
+!docs/screenshots/
+!docs/screenshots/**
 backups/
 *.log
 secrets/
-
 # Archives / local packages
 *.tar.gz
 *.tgz
 payment-qa-runner.tar.gz
-
 # Playwright / browser
 playwright/.cache/
 ms-playwright/
 .browser-cache/
-
 # IDE / OS
 .idea/
 .vscode/
@@ -49,6 +46,9 @@ ms-playwright/
 *.swp
 *.bak
 .env.bak
-
 # Docker local overrides
 docker-compose.override.yml
+# Local agent / tooling
+.cursor/
+*.pem
+*.key

@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import { api, API } from "@/lib/api";
+import { api } from "@/lib/api";
 import clsx from "clsx";
 
 type Comp = { status: string; last_seen?: string };
@@ -13,7 +13,7 @@ export default function Dashboard() {
   const load = useCallback(async () => {
     try {
       setStats(await api("/dashboard/stats"));
-      const h = await fetch(`${API}/api/health`).then((r) => r.json());
+      const h = await api("/health");
       setHealth(h);
       setErr("");
     } catch (e: any) {

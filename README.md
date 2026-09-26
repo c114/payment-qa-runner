@@ -1,63 +1,52 @@
 # Payment QA Runner
 
-沙箱 / Staging / Internal QA 支付流程自动化工具。通过 Playwright 按 Page Mapping 与 Workflow 执行加卡流程，对比 **Expected vs Actual** 判定 PASS/FAIL。  
-**Preply.com 仅作 UI 参考**（`docs/screenshots/page-1.png` … `page-7.png`），默认不连接正式站。Payrails 密钥由管理员在面板填写，仓库不包含伪造密钥。
+**Version 1.2.0** — 沙箱 / Staging / Internal QA 支付流程自动化工具。通过 Playwright 按 Page Mapping 与 Workflow 执行加卡流程，对比 **Expected vs Actual** 判定 PASS/FAIL。  
+**Preply.com 仅作 UI 参考**（`docs/screenshots/`），默认不连接正式站。Payrails 密钥由管理员在面板填写，仓库不包含伪造密钥。
+
+仓库现为 **Public**：https://github.com/c114/payment-qa-runner
 
 ---
 
-## Quick Start
+## Quick Start (Public)
 
-当前 Repository：**Private**（https://github.com/c114/payment-qa-runner）
-
-### Step 1 — GitHub 授权
-
-```bash
-gh auth login --web
-```
-
-### Step 2 — Clone
-
-```bash
-gh repo clone c114/payment-qa-runner /opt/payment-qa-runner
-```
-
-### Step 3 — 安装
-
-```bash
-cd /opt/payment-qa-runner
-sudo bash install.sh
-```
-
-详细私有仓流程见 [PRIVATE-INSTALL.md](PRIVATE-INSTALL.md)。
-
-### Quick Commands
-
-```bash
-sudo bash install.sh    # 首次安装
-sudo bash update.sh     # 更新
-sudo bash status.sh     # 状态 / health
-sudo bash logs.sh       # 日志（可跟 backend|worker|frontend）
-sudo bash restart.sh    # 重启
-sudo bash backup.sh     # 备份
-sudo bash restore.sh backups/<file>.tgz
-./scripts/vps-preflight.sh
-```
-
-面板默认：`http://SERVER_IP:3000` · API：`http://SERVER_IP:8000`
-
-若以后管理员**手动**将仓库改为 Public，可用：
+### One-shot install
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/c114/payment-qa-runner/main/install.sh | sudo bash
 ```
 
-（Private 时该 curl 不可用，请始终用上面的 `gh repo clone` 流程。）
+### Or clone then install
+
+```bash
+git clone https://github.com/c114/payment-qa-runner.git /opt/payment-qa-runner
+cd /opt/payment-qa-runner
+sudo bash install.sh
+```
+
+### Quick Commands
+
+```bash
+sudo bash install.sh     # 首次安装（自动装 Docker、生成 secrets、compose up）
+sudo bash update.sh      # 备份 → pull → build → restart → health
+sudo bash status.sh      # 状态 / health
+sudo bash diagnose.sh    # 版本 / commit / Docker / 容器 / 磁盘 / 日志
+sudo bash repair.sh      # 修复目录权限 / 重启
+sudo bash logs.sh        # 日志（可跟 backend|worker|frontend）
+sudo bash restart.sh     # 重启
+sudo bash backup.sh      # 备份
+sudo bash restore.sh backups/<file>.tgz
+```
+
+面板：**`http://SERVER_IP:3000`**（浏览器只访问 3000；`/api/*` 由 Next.js 同源代理到 backend）  
+API 调试口：`http://SERVER_IP:8000`（可选）
+
+**Same-Origin（1.2.0）**：无需配置 `NEXT_PUBLIC_API_URL` / 公网 CORS IP。`install.sh` 一键成功。
 
 ---
-
 ## 功能概览
 
-- 管理端：Dashboard、Environments、Page Mapping、Workflow、QA Accounts、SOCKS5、Network Profiles、Browser Sessions、Test Cases / TXT Import、Test Runs、Results、Screenshots、Reports、Logs、System Settings（含 Payrails）、Help
+- 管理端：Dashboard、Environments（Clone/Import/Export）、Page Mapping（CRUD/JSON/Test Selector）、Workflow、QA Accounts（批量导入导出）、SOCKS5（批量/Test All/Export）、Network Profiles、Browser Sessions（全动作）、Test Cases（批量）、统一导入中心、Test Runs、Results、Screenshots、Reports、Logs、System Settings（含 Payrails）、Help
+- **Same-Origin API（1.2.0）**：浏览器只访问 `:3000`；Next.js `app/api/[...path]` 代理到 `backend:8000`，无需 `NEXT_PUBLIC_API_URL` / 公网 CORS
 - Worker：异步 Playwright（`PLAYWRIGHT_MOCK=1` 可无真实浏览器跑 CI）
 - 安全：域名白名单、CVV 不落库、PAN 掩码 `**** **** **** 1234`、密码/代理密码 Fernet 加密、拒付/3DS **禁止**自动换代理
 

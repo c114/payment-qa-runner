@@ -4,7 +4,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf 
 COPY backend/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 COPY backend /app/backend
-COPY docs /app/docs
+# docs/ is tracked (at least README); ensure path exists for help/UI reference
+RUN mkdir -p /app/docs/screenshots
+COPY docs/ /app/docs/
 ENV PYTHONPATH=/app/backend
 ENV DATABASE_URL=sqlite:////data/payment_qa.db
 ENV SCREENSHOT_DIR=/data/screenshots

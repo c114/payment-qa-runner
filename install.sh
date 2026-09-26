@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Payment QA Runner — one-click installer (Ubuntu 22.04/24.04, Debian 12/13)
+# Public: curl -fsSL https://raw.githubusercontent.com/c114/payment-qa-runner/main/install.sh | sudo bash
 set -euo pipefail
 
 REPO_SLUG="c114/payment-qa-runner"
 INSTALL_DIR="${INSTALL_DIR:-/opt/payment-qa-runner}"
-VERSION="1.1.0"
+VERSION="1.2.0"
 
 need_root() {
   if [[ "${EUID}" -ne 0 ]]; then
@@ -106,13 +107,15 @@ else
     echo "==> $ROOT already exists — fetch only (use update.sh to upgrade)"
     git -C "$ROOT" fetch --all --prune || true
   else
-    echo "==> Cloning git@… via gh: ${REPO_SLUG} -> $ROOT"
-    if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+    echo "==> Cloning https://github.com/${REPO_SLUG} -> $ROOT"
+    if git clone "https://github.com/${REPO_SLUG}.git" "$ROOT" 2>/dev/null; then
+      :
+    elif command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
       gh repo clone "$REPO_SLUG" "$ROOT"
     else
-      echo "ERROR: Private repo requires GitHub auth."
-      echo "  Install gh, run: gh auth login --web"
-      echo "  Then: gh repo clone ${REPO_SLUG} ${INSTALL_DIR} && cd ${INSTALL_DIR} && sudo bash install.sh"
+      echo "ERROR: Could not clone repository."
+      echo "  git clone https://github.com/${REPO_SLUG}.git ${INSTALL_DIR}"
+      echo "  cd ${INSTALL_DIR} && sudo bash install.sh"
       exit 1
     fi
   fi
@@ -152,9 +155,14 @@ if is_weak_admin_pw "$admin_pw"; then
   echo "==> Generated temporary ADMIN_PASSWORD (shown once at end)"
 fi
 
-# Safe defaults for first install
+# Safe defaults — Same-Origin: no NEXT_PUBLIC_API_URL / public CORS IP required
 set_env_kv PLAYWRIGHT_MOCK "1" .env
 set_env_kv LIVE_TESTING_ENABLED "false" .env
+set_env_kv CORS_ORIGINS "http://localhost:3000,http://127.0.0.1:3000" .env
+# Remove any baked NEXT_PUBLIC_API_URL so browser uses same-origin /api
+if grep -q '^NEXT_PUBLIC_API_URL=' .env 2>/dev/null; then
+  set_env_kv NEXT_PUBLIC_API_URL "" .env
+fi
 
 chmod 600 .env
 rm -f .env.bak 2>/dev/null || true
@@ -170,7 +178,7 @@ docker compose up -d
 
 echo "==> Waiting for health"
 HEALTH="FAIL"
-for i in $(seq 1 45); do
+for i in $(seq 1 60); do
   if curl -sf http://127.0.0.1:8000/api/health >/dev/null 2>&1; then
     HEALTH="PASS"
     break
@@ -178,8 +186,18 @@ for i in $(seq 1 45); do
   sleep 2
 done
 
+# Also check frontend Same-Origin proxy
+FRONT_HEALTH="FAIL"
+for i in $(seq 1 30); do
+  if curl -sf http://127.0.0.1:3000/ >/dev/null 2>&1; then
+    FRONT_HEALTH="PASS"
+    break
+  fi
+  sleep 2
+done
+
 if [[ "$HEALTH" != "PASS" ]]; then
-  echo "ERROR: health check failed"
+  echo "ERROR: backend health check failed"
   docker compose ps || true
   docker compose logs --tail=200 || true
   exit 1
@@ -203,10 +221,10 @@ echo
 echo "Install Directory:"
 echo "$ROOT"
 echo
-echo "Admin URL:"
+echo "Admin URL (Same-Origin API via /api):"
 echo "http://${SERVER_IP}:3000"
 echo
-echo "API:"
+echo "API (debug / health scripts):"
 echo "http://${SERVER_IP}:8000"
 echo
 echo "Admin Email:"
@@ -218,23 +236,17 @@ if [[ -n "$CREATED_ADMIN_PW" ]]; then
   echo "(change this after first login — not stored in git/logs)"
   echo
 fi
-echo "Health:"
-echo "$HEALTH"
+echo "Backend Health: $HEALTH"
+echo "Frontend Health: $FRONT_HEALTH"
 echo
 echo "Status:"
 echo "docker compose ps"
 docker compose ps || true
 echo
-echo "Logs:"
-echo "docker compose logs -f"
-echo
 echo "Update:"
 echo "cd $ROOT && sudo bash update.sh"
 echo
-echo "Backup:"
-echo "cd $ROOT && sudo bash backup.sh"
-echo
-echo "Restore:"
-echo "cd $ROOT && sudo bash restore.sh <backup>"
+echo "Diagnose:"
+echo "cd $ROOT && sudo bash diagnose.sh"
 echo
 echo "========================================"

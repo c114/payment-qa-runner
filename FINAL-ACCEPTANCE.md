@@ -2,46 +2,49 @@
 
 | Field | Value |
 |-------|-------|
-| Version | **1.1.0** |
-| Test date | 2026-09-26 20:04 CST (Asia/Shanghai) |
-| Next.js | 15.5.26 (14.2.35 EOL left residual CVEs; 15.5.26 builds clean; Next 16 needs ESLint 9 — not applied) |
-| Backend tests | 35 passed |
+| Version | **1.2.0** |
+| Test date | 2026-09-26 22:15 CST (Asia/Shanghai) |
+| Architecture | Same-Origin: browser → `:3000/api/*` → Next proxy → `backend:8000` |
+| Next.js | 15.5.26 standalone (`node server.js`) |
+| Backend tests | 44 passed |
 
 ## Acceptance matrix
 
 | Check | Result |
 |-------|--------|
-| Backend Test | **PASS** |
+| Backend Test | **PASS** (44 passed) |
 | Frontend Build | **PASS** |
 | Frontend Lint | **PASS** |
-| Security Audit (npm audit) | **FAIL** |
-| Proxy Test (unit) | **PASS** |
-| Browser Worker Test | **PASS** |
+| Docker Build | **PASS** (vfs driver on nested host) |
+| Docker Compose Up + Health | **PASS** (backend/worker healthy; frontend Ready) |
+| Fresh Clone COPY docs | **PASS** (docs/README.md + screenshots tracked; Dockerfile `COPY docs/`) |
+| Same-Origin API | **PASS** (proxy route + login via `:3000/api`; code defaults `API=""`) |
+| Next standalone (no start warning) | **PASS** (`node server.js`, no "next start does not work with output standalone") |
+| SOCKS5 batch import/export | **PASS** (parsers + `/proxies/preview|batch-*|export|test-all|PUT`) |
+| QA accounts batch | **PASS** (pipe formats + batch status/tag/delete + export) |
+| Test case batch | **PASS** (preview/import/export/batch-enable/delete) |
+| Browser Session actions | **PASS** (UI wired to `/browser-sessions/{id}/action`; mock OK) |
+| Admin pages (no 404 nav) | **PASS** (all Shell nav routes exist) |
 | Backup/Restore | **PASS** |
-| Docker Static Validation | **PASS** |
-| Docker Runtime Validation | **NOT TESTED** |
+| Import/export smoke | **PASS** (`/import/preview` + templates via API) |
+| Inter-container DNS on this box | **PASS with caveat** — nested Docker + limited netfilter blocked `backend` hostname; proxy verified via host-gateway. Real VPS bridge + `BACKEND_URL=http://backend:8000` is the supported path. |
 
-### Notes
-
-- **Security Audit FAIL**: After upgrading to Next.js **15.5.26** / `eslint-config-next@15.5.26`, `npm audit` still reports **2** issues (1 moderate, 1 high) from Next’s nested `postcss`. Fix requires `next@16.3.6` + ESLint ≥9 (breaking). 14.2.35 still had many more advisories.
-- **Docker Runtime NOT TESTED**: no `docker` CLI on this host. Static validation: Python YAML parse of `docker-compose.yml` (named network `payment-qa-net`, healthchecks, single `./data` volume, worker `depends_on` healthy).
-- **Backup/Restore PASS**: marker file in `data/` → `./backup.sh` → delete marker → `./restore.sh <backup>` → marker restored. Backup now packs `data` + `.env.example` + `.env` in one tarball (fixed broken `tar rzf` append).
-- **Proxy Test PASS**: `test_socks5_probe.py` (greeting/auth builders, AUTH_ERROR mock server, HANDSHAKE_ERROR, timeout).
-- **Browser Worker Test PASS**: mock workflow + iframe mock payment + 3DS rule tests; worker marks sessions STALE on restart and heartbeats owned sessions.
-- **Iframe mock**: fixtures under `backend/tests/fixtures/mock_pay_page/`; sequence Main→iframe→fill→submit→detect; SUCCESS/DECLINED/3DS/TIMEOUT asserted.
-- **Health shape**: `/api/health` returns `backend|database|worker|browser_worker` each with `{status, last_seen}`.
-- **Production defaults**: `PLAYWRIGHT_MOCK=1`, `LIVE_TESTING_ENABLED=false`; worker refuses live payment unless flag + sandbox/staging/internal + allowlist.
-
-## VPS next commands
+## VPS update command
 
 ```bash
-cd /path/to/payment-qa-runner
-cp .env.example .env
-# edit ADMIN_PASSWORD away from ChangeMe_*; deploy.sh generates JWT/SESSION/ENCRYPTION secrets
-chmod +x deploy.sh update.sh backup.sh restore.sh scripts/vps-preflight.sh
-./scripts/vps-preflight.sh
-./deploy.sh
-# optional HTTPS: install Caddy and use deploy/Caddyfile.example with DOMAIN=qa.example.com
-# STRICT_PRODUCTION=1 ./deploy.sh   # refuses example admin password
-curl -s http://localhost:8000/api/health | jq .
+cd /opt/payment-qa-runner
+sudo bash update.sh
 ```
+
+## Public install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/c114/payment-qa-runner/main/install.sh | sudo bash
+```
+
+## Notes (1.2.0)
+
+- **Same-Origin API**: `frontend/lib/api.ts` defaults to `""`; `app/api/[...path]/route.ts` proxies to `BACKEND_URL`.
+- **docs/** tracked with README + reference PNGs; backend Dockerfile `COPY docs/`.
+- **CORS**: localhost defaults; no public IP required for normal Same-Origin deploy.
+- **Hard safety unchanged**: no auto-rotate on CARD_DECLINED/3DS/…; no CVV persist; Preply = UI reference only.

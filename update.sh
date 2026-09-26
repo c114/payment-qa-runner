@@ -3,7 +3,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
 
-echo "==> Update Payment QA Runner"
+echo "==> Update Payment QA Runner 1.2.0"
 
 BACKUP_OUT=""
 if BACKUP_OUT=$(./backup.sh | tee /dev/stderr | awk '/Backup written:/{print $3; exit}'); then
@@ -25,13 +25,13 @@ if ! docker compose build; then
 fi
 
 docker compose up -d
-# Alembic / schema: backend creates on start; optional migrate
 docker compose exec -T backend alembic upgrade head 2>/dev/null || true
-sleep 3
+sleep 5
 
 if curl -sf http://127.0.0.1:8000/api/health >/dev/null; then
   echo "Update OK"
   curl -s http://127.0.0.1:8000/api/health; echo
+  echo "Frontend: http://$(hostname -I 2>/dev/null | awk '{print $1}'):3000"
   echo "Backup retained: $BACKUP_OUT"
 else
   echo "Health check failed after update."

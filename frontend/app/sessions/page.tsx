@@ -3,7 +3,16 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import clsx from "clsx";
 
-const ACTIONS = ["open", "restart_page", "restart_browser", "clear_cookies", "re_login", "switch_account", "switch_network", "close"];
+const ACTIONS = [
+  { id: "open", label: "Open" },
+  { id: "restart_page", label: "Restart Page" },
+  { id: "restart_browser", label: "Restart Browser" },
+  { id: "clear_cookies", label: "Clear Cookies" },
+  { id: "re_login", label: "Re-login" },
+  { id: "switch_account", label: "Switch Account" },
+  { id: "switch_network", label: "Switch Network" },
+  { id: "close", label: "Close" },
+];
 
 function statusClass(status: string) {
   const s = (status || "").toUpperCase();
@@ -16,13 +25,31 @@ function statusClass(status: string) {
 export default function SessionsPage() {
   const [list, setList] = useState<any[]>([]);
   const [envs, setEnvs] = useState<any[]>([]);
+  const [accounts, setAccounts] = useState<any[]>([]);
+  const [networks, setNetworks] = useState<any[]>([]);
   const [name, setName] = useState("Session-1");
-  const load = () => { api("/browser-sessions").then(setList); api("/environments").then(setEnvs); };
+  const [msg, setMsg] = useState("");
+
+  const load = () => {
+    api("/browser-sessions").then(setList);
+    api("/environments").then(setEnvs);
+    api("/accounts").then(setAccounts);
+    api("/network-profiles").then(setNetworks);
+  };
   useEffect(() => {
     load();
     const t = setInterval(load, 4000);
     return () => clearInterval(t);
   }, []);
+
+  const act = async (sid: number, action: string) => {
+    const body: any = { action };
+    if (action === "switch_account" && accounts[0]) body.account_id = accounts[0].id;
+    if (action === "switch_network" && networks[0]) body.network_profile_id = networks[0].id;
+    const r = await api(`/browser-sessions/${sid}/action`, { method: "POST", body: JSON.stringify(body) });
+    setMsg(r.message || action);
+    load();
+  };
 
   return (
     <div className="space-y-4">
@@ -30,14 +57,16 @@ export default function SessionsPage() {
         <h2 className="font-semibold">浏览器会话</h2>
         <p className="help-field">
           STALE = Worker 重启或心跳超时，不会显示为 READY。switch_network = 新建 context，不热补丁代理。
+          PLAYWRIGHT_MOCK=1 时动作以 mock 方式排队。
         </p>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <input value={name} onChange={(e) => setName(e.target.value)} />
           <button className="btn" onClick={async () => {
             await api("/browser-sessions", { method: "POST", body: JSON.stringify({ name, environment_id: envs[0]?.id }) });
             load();
-          }}>创建</button>
+          }}>New Session</button>
         </div>
+        {msg && <p className="text-xs text-surface-muted">{msg}</p>}
       </div>
       <div className="space-y-3">
         {list.map((s) => (
@@ -57,14 +86,12 @@ export default function SessionsPage() {
             </div>
             <div className="flex flex-wrap gap-1">
               {ACTIONS.map((a) => (
-                <button key={a} className="btn-ghost text-xs" onClick={async () => {
-                  await api(`/browser-sessions/${s.id}/action`, { method: "POST", body: JSON.stringify({ action: a }) });
-                  load();
-                }}>{a}</button>
+                <button key={a.id} className="btn-ghost text-xs" onClick={() => act(s.id, a.id)}>{a.label}</button>
               ))}
             </div>
           </div>
         ))}
+        {!list.length && <p className="text-surface-muted text-sm">暂无会话 — 点击 New Session</p>}
       </div>
     </div>
   );

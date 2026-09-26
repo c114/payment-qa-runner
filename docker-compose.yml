@@ -1,13 +1,7 @@
 # Payment QA Runner — SQLite default shares ./data for backend+worker.
-# Postgres profile: set DATABASE_URL=postgresql+psycopg2://qa:qa@postgres:5432/payment_qa
-#   and do NOT leave sqlite:/// defaults conflicting. Example:
-#   DATABASE_URL=postgresql+psycopg2://qa:qa@postgres:5432/payment_qa docker compose --profile postgres up -d
-#
-# Frontend NEXT_PUBLIC_API_URL is build-time / browser-facing.
-#   Local: http://localhost:8000
-#   VPS with domain + reverse proxy (see deploy/Caddyfile.example): https://api.example.com
-#   Or same-origin via Caddy: leave API on /api proxied to backend:8000 and set NEXT_PUBLIC_API_URL=""
-# Optional Caddy is NOT in this compose; use deploy/Caddyfile.example with a host Caddy or profile later.
+# Browser talks ONLY to frontend:3000/api/* (Same-Origin). Next proxies to backend:8000.
+# Postgres profile: DATABASE_URL=postgresql+psycopg2://qa:qa@postgres:5432/payment_qa
+#   docker compose --profile postgres up -d
 
 networks:
   pqa:
@@ -27,6 +21,9 @@ services:
       LOG_DIR: /data/logs
       PLAYWRIGHT_MOCK: ${PLAYWRIGHT_MOCK:-1}
       LIVE_TESTING_ENABLED: ${LIVE_TESTING_ENABLED:-false}
+      # Same-Origin deploy: CORS not required for browser→frontend→backend path.
+      # Keep localhost for direct API debugging / local next dev.
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
     volumes:
       - ./data:/data
       - ./docs:/app/docs:ro
@@ -73,10 +70,12 @@ services:
       context: .
       dockerfile: frontend/Dockerfile
       args:
-        # Browser-facing API base. For VPS+Caddy same-origin, use empty or https://qa.example.com
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+        NEXT_PUBLIC_API_URL: ""
+        BACKEND_URL: http://backend:8000
     environment:
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+      BACKEND_URL: http://backend:8000
+      HOSTNAME: "0.0.0.0"
+      PORT: "3000"
     ports:
       - "3000:3000"
     networks:
@@ -89,7 +88,7 @@ services:
       interval: 15s
       timeout: 5s
       retries: 5
-      start_period: 20s
+      start_period: 25s
 
   postgres:
     image: postgres:16-alpine
@@ -104,7 +103,6 @@ services:
       - "5432:5432"
     networks:
       - pqa
-    # When using this profile, set DATABASE_URL to postgres (see top comment). Do not mix with sqlite default.
 
 volumes:
   pgdata:
