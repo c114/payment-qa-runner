@@ -1,43 +1,75 @@
-import os
-import sys
-from pathlib import Path
-
-# Project root on path so `worker.*` imports work in tests
-_ROOT = Path(__file__).resolve().parents[2]
-if str(_ROOT) not in sys.path:
-    sys.path.insert(0, str(_ROOT))
-if str(_ROOT / "backend") not in sys.path:
-    sys.path.insert(0, str(_ROOT / "backend"))
+"""Pytest fixtures for Payment Test Runner 2.0.0."""
+from __future__ import annotations
 
 import os
-os.environ.setdefault("JWT_SECRET", "test-secret")
-os.environ.setdefault("ENCRYPTION_KEY", "")
-os.environ.setdefault("PLAYWRIGHT_MOCK", "1")
-os.environ.setdefault("DATABASE_URL", "sqlite:////tmp/pqa_pytest.db")
-os.environ.setdefault("ADMIN_EMAIL", "admin@example.com")
-os.environ.setdefault("ADMIN_PASSWORD", "ChangeMe_Admin_123!")
-os.environ.setdefault("SCREENSHOT_DIR", "/tmp/pqa_screenshots")
-os.environ.setdefault("REPORT_DIR", "/tmp/pqa_reports")
-os.environ.setdefault("LOG_DIR", "/tmp/pqa_logs")
-os.environ.setdefault("SESSION_DIR", "/tmp/pqa_sessions")
+import tempfile
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+
+# Use temp sqlite before importing app
+_fd, _db_path = tempfile.mkstemp(suffix=".db")
+os.close(_fd)
+os.environ["DATABASE_URL"] = f"sqlite:///{_db_path}"
+os.environ["JWT_SECRET"] = "test-jwt-secret-for-pytest"
+os.environ["ADMIN_EMAIL"] = "admin@example.com"
+os.environ["ADMIN_PASSWORD"] = "TestAdmin_123!"
+os.environ["PLAYWRIGHT_MOCK"] = "0"
+os.environ["LIVE_TESTING_ENABLED"] = "true"
+os.environ["APP_VERSION"] = "2.0.0"
+
+from app.core.config import get_settings
+get_settings.cache_clear()
+
+from app.core.database import Base, get_db
+from app.main import app
+from app.seed.bootstrap import seed_all
 
 
-@pytest.fixture(scope="module")
-def client():
-    from app.core.config import get_settings
-    get_settings.cache_clear()
-    from app.core.database import Base, engine, SessionLocal
-    from app.seed.bootstrap import seed_all
+@pytest.fixture()
+def db_engine():
+    engine = create_engine(
+        f"sqlite:///{_db_path}",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
-    db = SessionLocal()
-    try:
-        seed_all(db)
-    finally:
-        db.close()
-    from app.main import app
+    return engine
+
+
+@pytest.fixture()
+def db(db_engine):
+    Session = sessionmaker(bind=db_engine, autocommit=False, autoflush=False)
+    session = Session()
+    seed_all(session)
+    yield session
+    session.close()
+
+
+@pytest.fixture()
+def client(db_engine, db):
+    Session = sessionmaker(bind=db_engine, autocommit=False, autoflush=False)
+
+    def _override():
+        s = Session()
+        try:
+            yield s
+        finally:
+            s.close()
+
+    app.dependency_overrides[get_db] = _override
     with TestClient(app) as c:
         yield c
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture()
+def auth_headers(client):
+    r = client.post("/api/auth/login", json={"email": "admin@example.com", "password": "TestAdmin_123!"})
+    assert r.status_code == 200, r.text
+    token = r.json()["access_token"]
+    return {"Authorization": f"Bearer {token}"}

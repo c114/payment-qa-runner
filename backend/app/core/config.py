@@ -23,10 +23,10 @@ class Settings(BaseSettings):
     backend_host: str = "0.0.0.0"
     backend_port: int = 8000
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
-    app_version: str = "1.3.1"
+    app_version: str = "2.0.0"
 
-    playwright_mock: int = 0
-    live_testing_enabled: bool = False
+    playwright_mock: int = 0  # ignored for PASS — mode always LIVE
+    live_testing_enabled: bool = True  # 2.0 always LIVE; card fill still gated by task env_type
     session_secret: str = ""
     proxy_test_url: str = "http://1.1.1.1/"
     session_heartbeat_stale_sec: int = 30
@@ -36,7 +36,10 @@ class Settings(BaseSettings):
     report_dir: str = "/workspace/payment-qa-runner/data/reports"
     log_dir: str = "/workspace/payment-qa-runner/data/logs"
     session_dir: str = "/workspace/payment-qa-runner/data/sessions"
+    trace_dir: str = "/workspace/payment-qa-runner/data/traces"
     browser_debug: int = 0
+    sandbox_base_url: str = "http://sandbox:8080"
+    worker_heartbeat_file: str = "/workspace/payment-qa-runner/data/logs/worker.heartbeat"
 
     @property
     def cors_origin_list(self) -> List[str]:
@@ -54,9 +57,8 @@ def get_settings() -> Settings:
 
 def ensure_data_dirs() -> None:
     s = get_settings()
-    candidates = [s.screenshot_dir, s.report_dir, s.log_dir, s.session_dir]
+    candidates = [s.screenshot_dir, s.report_dir, s.log_dir, s.session_dir, s.trace_dir]
     if s.database_url.startswith("sqlite"):
-        # sqlite:////abs/path.db → /abs/path.db ; sqlite:///rel.db → rel.db
         if s.database_url.startswith("sqlite:////"):
             db_path = "/" + s.database_url[len("sqlite:////"):]
         else:

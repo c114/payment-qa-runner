@@ -8,7 +8,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY backend/requirements.txt /app/backend-requirements.txt
 COPY worker/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/backend-requirements.txt playwright==1.49.1 \
-    && playwright install chromium || true
+    && playwright install --with-deps chromium || playwright install chromium || true
 COPY backend /app/backend
 COPY worker /app/worker
 COPY docs /app/docs
@@ -18,8 +18,11 @@ ENV SCREENSHOT_DIR=/data/screenshots
 ENV REPORT_DIR=/data/reports
 ENV LOG_DIR=/data/logs
 ENV SESSION_DIR=/data/sessions
+ENV TRACE_DIR=/data/traces
 ENV PLAYWRIGHT_MOCK=0
-ENV LIVE_TESTING_ENABLED=false
+ENV LIVE_TESTING_ENABLED=true
 ENV WORKER_HEARTBEAT_FILE=/data/logs/worker.heartbeat
+ENV SANDBOX_BASE_URL=http://sandbox:8080
+ENV APP_VERSION=2.0.0
 WORKDIR /app
 CMD ["python", "-m", "worker.runner"]

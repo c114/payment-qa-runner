@@ -1,394 +1,314 @@
-"""Pydantic v2 schemas."""
+"""Pydantic schemas for Payment Test Runner 2.0.0."""
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, List, Optional
 
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
-class TokenOut(BaseModel):
+# ── Auth ──────────────────────────────────────────────────────────────────────
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str
+
+
+class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
 
 
-class LoginIn(BaseModel):
-    email: EmailStr
-    password: str
-
-
-class EnvironmentIn(BaseModel):
-    name: str
-    base_url: str
-    allowed_domains: List[str] = Field(default_factory=list)
-    env_type: str = "sandbox"
-    is_active: bool = True
-    notes: Optional[str] = None
-
-
-class EnvironmentOut(EnvironmentIn):
-    id: int
-    last_test_status: Optional[str] = None
-    last_test_at: Optional[datetime] = None
-    created_at: datetime
-    model_config = {"from_attributes": True}
-
-
-class PageMappingIn(BaseModel):
-    key: str
-    label: str
-    page_group: str = "general"
-    selector_type: str = "css"
-    selector: str = ""
-    iframe_selector: Optional[str] = None
-    is_example: bool = False
-    help_zh: Optional[str] = None
-    help_en: Optional[str] = None
-    sort_order: int = 0
-
-
-class PageMappingOut(PageMappingIn):
-    id: int
-    model_config = {"from_attributes": True}
-
-
-class WorkflowStepIn(BaseModel):
-    step_key: str
-    name_zh: str
-    name_en: str
-    action: str
-    mapping_keys: List[str] = Field(default_factory=list)
-    config: Dict[str, Any] = Field(default_factory=dict)
-    sort_order: int = 0
-    enabled: bool = True
-
-
-class WorkflowStepOut(WorkflowStepIn):
-    id: int
-    model_config = {"from_attributes": True}
-
-
-class QAAccountIn(BaseModel):
-    email: EmailStr
-    password: str
-    display_name: Optional[str] = None
-    notes: Optional[str] = None
-
-
-class QAAccountOut(BaseModel):
+class AdminOut(BaseModel):
     id: int
     email: str
-    display_name: Optional[str] = None
+    is_active: bool
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ── Accounts ──────────────────────────────────────────────────────────────────
+class AccountOut(BaseModel):
+    id: int
+    email: str
     status: str
-    consecutive_failures: int
-    cooldown_until: Optional[datetime] = None
-    last_login_status: Optional[str] = None
+    selected: bool
+    session_status: str
+    last_result: Optional[str] = None
     last_used_at: Optional[datetime] = None
-    notes: Optional[str] = None
-    session_status: Optional[str] = "NONE"
-    session_path: Optional[str] = None
-    session_updated_at: Optional[datetime] = None
     created_at: datetime
-    model_config = {"from_attributes": True}
+
+    model_config = ConfigDict(from_attributes=True)
 
 
-class Socks5In(BaseModel):
-    host: str
-    port: int
+class ImportPreviewRequest(BaseModel):
+    text: str = ""
+
+
+class ImportConfirmRequest(BaseModel):
+    text: str = ""
+    skip_dupes: bool = True
+
+
+class ImportLineResult(BaseModel):
+    line: int
+    raw: str
+    status: str  # valid|dupe|error
+    reason: str = ""
+    email: Optional[str] = None
+
+
+class ImportPreviewResponse(BaseModel):
+    total: int
+    valid: int
+    dupe: int
+    error: int
+    lines: List[ImportLineResult]
+
+
+class SelectRequest(BaseModel):
+    ids: List[int]
+    selected: bool = True
+
+
+class IdsRequest(BaseModel):
+    ids: List[int]
+
+
+# ── Test Data ─────────────────────────────────────────────────────────────────
+class TestDataOut(BaseModel):
+    id: int
+    pan_masked: str
+    pan_last4: str
+    expiry: str
+    brand: Optional[str] = None
+    selected: bool
+    used_count: int
+    status: str
+    last_used_at: Optional[datetime] = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class TestDataImportLine(BaseModel):
+    line: int
+    raw: str
+    status: str
+    reason: str = ""
+    pan_masked: Optional[str] = None
+    expiry: Optional[str] = None
+
+
+class TestDataImportPreview(BaseModel):
+    total: int
+    valid: int
+    dupe: int
+    error: int
+    lines: List[TestDataImportLine]
+
+
+# ── Tasks ─────────────────────────────────────────────────────────────────────
+class TaskCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    description: Optional[str] = None
+    env_type: str = Field(..., pattern="^(Production|Sandbox|QA|Staging|Internal)$")
+    base_url: str = Field(..., min_length=1)
+    login_url: str = ""
+    target_url: str = Field(..., min_length=1)
+    task_type: str = "smoke"  # smoke|card_bind
+    enabled: bool = True
+    key: Optional[str] = None
+    config: dict = Field(default_factory=dict)
+
+
+class TaskUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    env_type: Optional[str] = None
+    base_url: Optional[str] = None
+    login_url: Optional[str] = None
+    target_url: Optional[str] = None
+    task_type: Optional[str] = None
+    enabled: Optional[bool] = None
+    config: Optional[dict] = None
+
+
+class TaskOut(BaseModel):
+    id: int
+    key: str
+    name: str
+    description: Optional[str] = None
+    env_type: str
+    base_url: str
+    login_url: str
+    target_url: str
+    allow_card_fill: bool
+    task_type: str
+    enabled: bool
+    is_builtin: bool
+    config: dict = Field(default_factory=dict)
+    last_url_test_status: Optional[str] = None
+    last_url_test_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+    field_help: Optional[dict] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ── Networks ──────────────────────────────────────────────────────────────────
+class NetworkCreate(BaseModel):
+    name: str
+    protocol: str = Field(..., pattern="^(direct|http|socks5)$")
+    host: Optional[str] = None
+    port: Optional[int] = None
     username: Optional[str] = None
     password: Optional[str] = None
-    label: Optional[str] = None
-    is_active: bool = True
-
-
-class Socks5Out(BaseModel):
-    id: int
-    host: str
-    port: int
-    username: Optional[str] = None
-    label: Optional[str] = None
-    status: str
-    latency_ms: Optional[float] = None
-    exit_ip: Optional[str] = None
-    last_tested_at: Optional[datetime] = None
-    is_active: bool
-    created_at: datetime
-    model_config = {"from_attributes": True}
-
-
-class NetworkProfileIn(BaseModel):
-    name: str
-    mode: str = "direct"
-    proxy_id: Optional[int] = None
     is_default: bool = False
 
 
-class NetworkProfileOut(NetworkProfileIn):
+class NetworkUpdate(BaseModel):
+    name: Optional[str] = None
+    protocol: Optional[str] = None
+    host: Optional[str] = None
+    port: Optional[int] = None
+    username: Optional[str] = None
+    password: Optional[str] = None
+    is_default: Optional[bool] = None
+
+
+class NetworkOut(BaseModel):
     id: int
-    created_at: datetime
-    model_config = {"from_attributes": True}
-
-
-class BrowserSessionIn(BaseModel):
     name: str
-    environment_id: Optional[int] = None
-    account_id: Optional[int] = None
-    network_profile_id: Optional[int] = None
+    protocol: str
+    host: Optional[str] = None
+    port: Optional[int] = None
+    username: Optional[str] = None
+    has_password: bool = False
+    is_default: bool
+    last_test_status: Optional[str] = None
+    last_latency_ms: Optional[float] = None
+    last_test_error: Optional[str] = None
+    last_tested_at: Optional[datetime] = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
 
 
-class BrowserSessionOut(BrowserSessionIn):
+# ── Runs ──────────────────────────────────────────────────────────────────────
+class RunCreate(BaseModel):
+    task_id: int
+    network_id: Optional[int] = None
+    account_ids: Optional[List[int]] = None  # None → use selected
+    test_data_ids: Optional[List[int]] = None
+
+
+class RunItemOut(BaseModel):
     id: int
+    run_id: int
+    account_id: Optional[int] = None
+    account_email: Optional[str] = None
+    test_data_id: Optional[int] = None
+    test_data_masked: Optional[str] = None
     status: str
-    worker_id: Optional[str] = None
-    browser_state: Optional[str] = None
-    context_state: Optional[str] = None
-    last_heartbeat: Optional[datetime] = None
-    last_activity: Optional[datetime] = None
-    last_action: Optional[str] = None
-    meta: Dict[str, Any] = Field(default_factory=dict)
-    created_at: datetime
-    updated_at: datetime
-    model_config = {"from_attributes": True}
-
-
-class TestCaseIn(BaseModel):
-    case_id: str
-    name: str
-    payment_test_ref: str = ""
-    card_brand: Optional[str] = None
-    pan_masked: Optional[str] = None
-    expiry: Optional[str] = None
-    expected_result: str = "SUCCESS"
-    tags: List[str] = Field(default_factory=list)
-    extra: Dict[str, Any] = Field(default_factory=dict)
-    is_active: bool = True
-
-
-class TestCaseOut(TestCaseIn):
-    id: int
-    created_at: datetime
-    model_config = {"from_attributes": True}
-
-
-class TestRunCreate(BaseModel):
-    name: str = ""
-    environment_id: int
-    account_id: Optional[int] = None
-    network_profile_id: Optional[int] = None
-    proxy_pool_ids: List[int] = Field(default_factory=list)
-    case_ids: List[str] = Field(default_factory=list)
-    run_count: str = "1"
-
-
-class TestRunOut(BaseModel):
-    # extended in from_attributes; extra fields optional
-    id: int
-    name: str
-    environment_id: int
-    account_id: Optional[int] = None
-    network_profile_id: Optional[int] = None
-    proxy_pool_ids: List[Any] = Field(default_factory=list)
-    case_ids: List[Any] = Field(default_factory=list)
-    run_count: str
-    status: str
-    progress_done: int
-    progress_total: int
-    pass_count: int
-    fail_count: int
-    error_count: int
-    current_case_id: Optional[str] = None
-    task_preset_id: Optional[int] = None
-    account_ids: List[Any] = Field(default_factory=list)
-    current_account: Optional[str] = None
-    current_step: Optional[str] = None
-    run_mode: str = "workflow"
-    is_mock: bool = False
-    error_code: Optional[str] = None
-    live_log: List[Any] = Field(default_factory=list)
+    result_code: Optional[str] = None
+    reason: Optional[str] = None
+    state: str
+    steps: list = Field(default_factory=list)
+    duration_ms: float = 0
     started_at: Optional[datetime] = None
     finished_at: Optional[datetime] = None
     created_at: datetime
-    model_config = {"from_attributes": True}
 
-    @field_validator("proxy_pool_ids", "case_ids", "account_ids", "live_log", mode="before")
-    @classmethod
-    def _none_to_list(cls, v):
-        return [] if v is None else v
-
-    @field_validator("run_mode", mode="before")
-    @classmethod
-    def _none_run_mode(cls, v):
-        return "workflow" if v is None or v == "" else v
-
-    @field_validator("is_mock", mode="before")
-    @classmethod
-    def _none_is_mock(cls, v):
-        return False if v is None else bool(v)
+    model_config = ConfigDict(from_attributes=True)
 
 
-class TestResultOut(BaseModel):
+class RunOut(BaseModel):
     id: int
-    run_id: int
-    case_id: str
-    case_name: str
-    expected: str
-    actual: str
-    status: str
-    duration_ms: float
-    steps: List[Any] = Field(default_factory=list)
-    screenshot_paths: List[str] = Field(default_factory=list)
-    account_email: Optional[str] = None
-    network_profile: Optional[str] = None
-    error_message: Optional[str] = None
-    pan_masked: Optional[str] = None
-    detail: Optional[Dict[str, Any]] = None
-    created_at: datetime
-    model_config = {"from_attributes": True}
-
-    @field_validator("steps", "screenshot_paths", mode="before")
-    @classmethod
-    def _none_lists(cls, v):
-        return [] if v is None else v
-
-    @field_validator("detail", mode="before")
-    @classmethod
-    def _none_detail(cls, v):
-        return {} if v is None else v
-
-
-class RunnerSettingsIn(BaseModel):
-    interval_sec: float = 5.0
-    timeout_sec: float = 30.0
-    network_retry: int = 2
-    timeout_retry: int = 1
-    decline_retry: int = 0
-    account_failure_threshold: int = 3
-    account_cooldown_sec: int = 300
-    restart_browser_every_n: int = 20
-    max_concurrent_browsers: int = 1
-    screenshot_policy: str = "FAIL,ERROR,3DS"
-
-
-class RunnerSettingsOut(RunnerSettingsIn):
-    id: int
-    model_config = {"from_attributes": True}
-
-
-class AccountCreationIn(BaseModel):
-    enabled: bool = False
-    test_email_domain: str = ""
-    name_prefix: str = "qa"
-
-
-class PayrailsConfigIn(BaseModel):
-    sandbox_base_url: str = ""
-    merchant_id: str = ""
-    api_key: Optional[str] = None  # write-only; blank keeps existing
-    public_key: str = ""
-    iframe_selector: str = ""
-    card_number_selector: str = ""
-    expiry_selector: str = ""
-    cvv_selector: str = ""
-    submit_selector: str = ""
-    result_selectors: Dict[str, Any] = Field(default_factory=dict)
-    threeds_selectors: List[str] = Field(default_factory=list)
-    sandbox_cards: Dict[str, Any] = Field(default_factory=dict)
-    notes: str = ""
-
-
-class PayrailsConfigOut(BaseModel):
-    id: int
-    sandbox_base_url: str
-    merchant_id: str
-    has_api_key: bool
-    public_key: str
-    iframe_selector: str
-    card_number_selector: str
-    expiry_selector: str
-    cvv_selector: str
-    submit_selector: str
-    result_selectors: Dict[str, Any]
-    threeds_selectors: List[str]
-    sandbox_cards: Dict[str, Any]
-    notes: str
-    model_config = {"from_attributes": True}
-
-
-class ImportMappingIn(BaseModel):
-    text: str
-    mapping: Optional[Dict[str, int]] = None
-    delimiter: str = "auto"
-
-
-class MessageOut(BaseModel):
-    message: str
-    detail: Any = None
-
-
-# ── 1.3.0 Quick Run / Task Presets ────────────────────
-class TaskPresetOut(BaseModel):
-    id: int
-    key: str
-    name: str
-    name_zh: str = ""
-    description: Optional[str] = None
-    description_zh: Optional[str] = None
-    task_type: str
-    start_url: str = ""
-    environment_id: Optional[int] = None
-    env_scope: str = "production"
-    allow_card_fill: bool = False
-    open_add_card_modal: bool = True
-    allowed_domains: List[str] = Field(default_factory=list)
-    is_active: bool = True
-    sort_order: int = 0
-    model_config = {"from_attributes": True}
-
-
-class QuickRunIn(BaseModel):
     task_id: int
-    account_ids: List[int] = Field(default_factory=list)
-    network_profile_id: Optional[int] = None
-    # Admin-only explicit mock (also PLAYWRIGHT_MOCK=1)
-    force_mock: bool = False
-
-
-class QuickRunOut(BaseModel):
-    run_id: int
-    status: str = "QUEUED"
-
-
-class QuickRunStatusOut(BaseModel):
-    run_id: int
+    task_snapshot: dict = Field(default_factory=dict)
+    network_id: Optional[int] = None
+    network_snapshot: dict = Field(default_factory=dict)
+    account_ids: list = Field(default_factory=list)
+    test_data_ids: list = Field(default_factory=list)
     status: str
-    progress_done: int = 0
-    progress_total: int = 0
+    progress_done: int
+    progress_total: int
+    success_count: int
+    fail_count: int
+    error_count: int
+    cancelled_count: int
     current_account: Optional[str] = None
     current_step: Optional[str] = None
-    success_count: int = 0
-    fail_count: int = 0
-    error_count: int = 0
-    pass_count: int = 0  # alias
-    live_log: List[Any] = Field(default_factory=list)
-    is_mock: bool = False
-    run_mode: str = "smoke"
+    live_log: list = Field(default_factory=list)
+    stop_requested: bool = False
+    mode: str = "LIVE"
     error_code: Optional[str] = None
-    error_message_zh: Optional[str] = None
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
+    created_at: datetime
+    items: Optional[List[RunItemOut]] = None
+
+    model_config = ConfigDict(from_attributes=True)
 
 
-class DataCleanupIn(BaseModel):
-    confirm: bool = False
-    accounts: bool = False
-    runs: bool = False
-    results: bool = False
-    screenshots: bool = False
-    traces: bool = False
-    expired_sessions: bool = False
+class ArtifactOut(BaseModel):
+    id: int
+    run_id: int
+    run_item_id: Optional[int] = None
+    kind: str
+    path: str
+    meta: dict = Field(default_factory=dict)
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
 
 
-class DataCleanupOut(BaseModel):
-    ok: bool
-    backup_path: Optional[str] = None
-    deleted: Dict[str, Any] = Field(default_factory=dict)
-    preserved: List[str] = Field(default_factory=list)
-    message: str = ""
+# ── Cleanup / Health / Home ───────────────────────────────────────────────────
+class CleanupPreview(BaseModel):
+    window: str  # 7d|30d|all
+    accounts: int = 0
+    test_data: int = 0
+    runs: int = 0
+    run_items: int = 0
+    artifacts: int = 0
+    screenshots_bytes: int = 0
+    traces_bytes: int = 0
+    logs_bytes: int = 0
+    sessions_bytes: int = 0
+
+
+class CleanupRequest(BaseModel):
+    window: str = "30d"
+    delete_runs: bool = True
+    delete_artifacts: bool = True
+    delete_sessions: bool = False
+    delete_unused_test_data: bool = False
+    delete_accounts: bool = False  # dangerous; default off
+
+
+class HealthOut(BaseModel):
+    status: str
+    version: str
+    mode: str
+    backend: str
+    database: str
+    worker: str
+    chromium: str
+    network: str
+    disk: dict = Field(default_factory=dict)
+    detail: dict = Field(default_factory=dict)
+
+
+class ReadinessOut(BaseModel):
+    ready: bool
+    reasons: List[str] = Field(default_factory=list)
+    accounts_imported: int = 0
+    accounts_selected: int = 0
+    test_data_imported: int = 0
+    test_data_available: int = 0
+    test_data_selected: int = 0
+    max_executable: int = 0
+    task: Optional[TaskOut] = None
+    network: Optional[NetworkOut] = None
+    checklist: dict = Field(default_factory=dict)

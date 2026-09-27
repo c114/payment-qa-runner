@@ -1,7 +1,6 @@
-# Payment QA Runner — SQLite default shares ./data for backend+worker.
-# Browser talks ONLY to frontend:3000/api/* (Same-Origin). Next proxies to backend:8000.
-# Postgres profile: DATABASE_URL=postgresql+psycopg2://qa:qa@postgres:5432/payment_qa
-#   docker compose --profile postgres up -d
+# Payment Test Runner 2.0.0
+# Browser → frontend:3000/api/* (Same-Origin) → backend:8000
+# Services: frontend, backend, worker, sandbox
 
 networks:
   pqa:
@@ -9,6 +8,19 @@ networks:
     driver: bridge
 
 services:
+  sandbox:
+    build:
+      context: .
+      dockerfile: sandbox/Dockerfile
+    networks:
+      - pqa
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+      start_period: 8s
+
   backend:
     build:
       context: .
@@ -20,10 +32,12 @@ services:
       REPORT_DIR: /data/reports
       LOG_DIR: /data/logs
       SESSION_DIR: /data/sessions
-      PLAYWRIGHT_MOCK: ${PLAYWRIGHT_MOCK:-0}
-      LIVE_TESTING_ENABLED: ${LIVE_TESTING_ENABLED:-false}
-      # Same-Origin deploy: CORS not required for browser→frontend→backend path.
-      # Keep localhost for direct API debugging / local next dev.
+      TRACE_DIR: /data/traces
+      WORKER_HEARTBEAT_FILE: /data/logs/worker.heartbeat
+      SANDBOX_BASE_URL: http://sandbox:8080
+      APP_VERSION: "2.0.0"
+      PLAYWRIGHT_MOCK: "0"
+      LIVE_TESTING_ENABLED: "true"
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
     volumes:
       - ./data:/data
@@ -32,12 +46,15 @@ services:
       - "8000:8000"
     networks:
       - pqa
+    depends_on:
+      sandbox:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
       interval: 10s
       timeout: 5s
       retries: 10
-      start_period: 15s
+      start_period: 20s
 
   worker:
     build:
@@ -46,14 +63,16 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: ${DATABASE_URL:-sqlite:////data/payment_qa.db}
-      PLAYWRIGHT_MOCK: ${PLAYWRIGHT_MOCK:-0}
-      LIVE_TESTING_ENABLED: ${LIVE_TESTING_ENABLED:-false}
       SCREENSHOT_DIR: /data/screenshots
       REPORT_DIR: /data/reports
       LOG_DIR: /data/logs
       SESSION_DIR: /data/sessions
+      TRACE_DIR: /data/traces
       WORKER_HEARTBEAT_FILE: /data/logs/worker.heartbeat
-      # FIXTURE_BASE_URL unset → worker uses bundled file:// fixture
+      SANDBOX_BASE_URL: http://sandbox:8080
+      APP_VERSION: "2.0.0"
+      PLAYWRIGHT_MOCK: "0"
+      LIVE_TESTING_ENABLED: "true"
     volumes:
       - ./data:/data
     networks:
@@ -61,12 +80,14 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+      sandbox:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "test -f /data/logs/worker.heartbeat && find /data/logs/worker.heartbeat -mmin -1 | grep -q ."]
+      test: ["CMD-SHELL", "test -f /data/logs/worker.heartbeat && find /data/logs/worker.heartbeat -mmin -2 | grep -q ."]
       interval: 15s
       timeout: 5s
       retries: 5
-      start_period: 20s
+      start_period: 30s
 
   frontend:
     build:
@@ -79,7 +100,6 @@ services:
       BACKEND_URL: http://backend:8000
       HOSTNAME: "0.0.0.0"
       PORT: "3000"
-    # Nested/limited Docker DNS: also resolve backend via host-published port
     extra_hosts:
       - "backend:host-gateway"
     ports:
@@ -94,21 +114,4 @@ services:
       interval: 15s
       timeout: 5s
       retries: 5
-      start_period: 25s
-
-  postgres:
-    image: postgres:16-alpine
-    profiles: ["postgres"]
-    environment:
-      POSTGRES_USER: qa
-      POSTGRES_PASSWORD: qa
-      POSTGRES_DB: payment_qa
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
-    networks:
-      - pqa
-
-volumes:
-  pgdata:
+      start_period: 30s

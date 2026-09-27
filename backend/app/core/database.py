@@ -1,7 +1,7 @@
-"""SQLAlchemy engine and session factory."""
+"""SQLAlchemy engine and session factory — 2.0 fresh schema."""
 from __future__ import annotations
 
-from sqlalchemy import create_engine, event, text
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 from app.core.config import get_settings
@@ -44,59 +44,5 @@ def get_db():
 
 
 def ensure_schema() -> None:
-    """Add missing columns for create_all-compatible upgrades (SQLite/Postgres)."""
-    settings = get_settings()
-    cols = {
-        "browser_sessions": [
-            ("worker_id", "VARCHAR(128)"),
-            ("browser_state", "VARCHAR(64)"),
-            ("context_state", "VARCHAR(64)"),
-            ("last_heartbeat", "TIMESTAMP"),
-            ("last_activity", "TIMESTAMP"),
-        ],
-        "qa_accounts": [
-            ("session_status", "VARCHAR(32)"),
-            ("session_path", "VARCHAR(512)"),
-            ("session_updated_at", "TIMESTAMP"),
-        ],
-        "test_runs": [
-            ("task_preset_id", "INTEGER"),
-            ("account_ids", "JSON"),
-            ("current_account", "VARCHAR(255)"),
-            ("current_step", "VARCHAR(128)"),
-            ("run_mode", "VARCHAR(32)"),
-            ("is_mock", "BOOLEAN"),
-            ("error_code", "VARCHAR(64)"),
-        ],
-        "test_results": [
-            ("detail", "JSON"),
-        ],
-    }
-    with engine.begin() as conn:
-        for table, additions in cols.items():
-            existing = set()
-            if settings.is_sqlite:
-                rows = conn.execute(text(f"PRAGMA table_info({table})")).fetchall()
-                existing = {r[1] for r in rows}
-            else:
-                rows = conn.execute(text(
-                    "SELECT column_name FROM information_schema.columns "
-                    "WHERE table_name=:t"
-                ), {"t": table}).fetchall()
-                existing = {r[0] for r in rows}
-            if not existing:
-                continue
-            for name, typ in additions:
-                if name in existing:
-                    continue
-                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {typ}"))
-        # Normalize legacy NULL list/bool columns on test_runs
-        try:
-            conn.execute(text("UPDATE test_runs SET account_ids = '[]' WHERE account_ids IS NULL"))
-            conn.execute(text("UPDATE test_runs SET proxy_pool_ids = '[]' WHERE proxy_pool_ids IS NULL"))
-            conn.execute(text("UPDATE test_runs SET case_ids = '[]' WHERE case_ids IS NULL"))
-            conn.execute(text("UPDATE test_runs SET live_log = '[]' WHERE live_log IS NULL"))
-            conn.execute(text("UPDATE test_runs SET run_mode = 'workflow' WHERE run_mode IS NULL OR run_mode = ''"))
-            conn.execute(text("UPDATE test_runs SET is_mock = 0 WHERE is_mock IS NULL"))
-        except Exception:
-            pass
+    """2.0 uses create_all + Alembic; no 1.x column patches."""
+    pass
