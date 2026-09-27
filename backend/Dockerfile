@@ -12,7 +12,7 @@ ENV DATABASE_URL=sqlite:////data/payment_qa.db
 ENV SCREENSHOT_DIR=/data/screenshots
 ENV REPORT_DIR=/data/reports
 ENV LOG_DIR=/data/logs
-ENV PLAYWRIGHT_MOCK=1
+ENV PLAYWRIGHT_MOCK=0
 ENV LIVE_TESTING_ENABLED=false
 WORKDIR /app/backend
 EXPOSE 8000

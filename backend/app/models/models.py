@@ -81,6 +81,10 @@ class QAAccount(Base):
     last_login_status: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     last_used_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Playwright storage_state persistence
+    session_status: Mapped[str] = mapped_column(String(32), default="NONE")  # NONE|VALID|EXPIRED
+    session_path: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    session_updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -141,6 +145,33 @@ class BrowserSession(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
 
+
+class TaskPreset(Base):
+    """Admin-preconfigured one-click QA tasks for normal users."""
+    __tablename__ = "task_presets"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    key: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(255))
+    name_zh: Mapped[str] = mapped_column(String(255), default="")
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    description_zh: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # smoke | payment_fill | local_fixture
+    task_type: Mapped[str] = mapped_column(String(32), default="smoke")
+    start_url: Mapped[str] = mapped_column(String(512), default="")
+    environment_id: Mapped[Optional[int]] = mapped_column(ForeignKey("environments.id"), nullable=True)
+    # production | sandbox | staging | internal | local
+    env_scope: Mapped[str] = mapped_column(String(32), default="production")
+    # For smoke: never fill card. For payment_fill: requires LIVE_TESTING + sandbox|staging|internal
+    allow_card_fill: Mapped[bool] = mapped_column(Boolean, default=False)
+    open_add_card_modal: Mapped[bool] = mapped_column(Boolean, default=True)
+    allowed_domains: Mapped[list] = mapped_column(JSON, default=list)
+    config: Mapped[dict] = mapped_column(JSON, default=dict)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
 class TestCase(Base):
     __tablename__ = "test_cases"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -176,6 +207,14 @@ class TestRun(Base):
     error_count: Mapped[int] = mapped_column(Integer, default=0)
     current_case_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     live_log: Mapped[list] = mapped_column(JSON, default=list)
+    # 1.3.0 quick-run / smoke fields
+    task_preset_id: Mapped[Optional[int]] = mapped_column(ForeignKey("task_presets.id"), nullable=True)
+    account_ids: Mapped[list] = mapped_column(JSON, default=list)
+    current_account: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    current_step: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    run_mode: Mapped[str] = mapped_column(String(32), default="workflow")  # smoke|payment|workflow|local_fixture
+    is_mock: Mapped[bool] = mapped_column(Boolean, default=False)
+    error_code: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

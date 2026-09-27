@@ -19,8 +19,12 @@ from app.core.database import Base, SessionLocal, engine
 from app.core.security import decrypt_secret, mask_pan, never_persist_cvv, redact_dict
 from app.models.models import (
     AppLog, BrowserSession, Environment, NetworkProfile, PageMapping, PayrailsConfig,
-    QAAccount, RunnerSettings, Socks5Proxy, SystemSettings, TestCase, TestResult, TestRun,
+    QAAccount, RunnerSettings, Socks5Proxy, SystemSettings, TaskPreset, TestCase, TestResult, TestRun,
     WorkflowStep,
+)
+from app.services.error_codes import (
+    LIVE_TESTING_DISABLED, ENVIRONMENT_NOT_ALLOWED, ACCOUNT_NOT_READY,
+    PAYMENT_FILL_NOT_ALLOWED, message_zh,
 )
 from app.seed.bootstrap import seed_all
 from app.services.allowlist import assert_navigation_allowed, is_url_allowed
@@ -78,14 +82,56 @@ def mark_sessions_stale_on_startup(db) -> None:
     db.commit()
 
 
-def live_testing_allowed(env: Environment) -> tuple[bool, str]:
-    """Refuse live browser payment unless LIVE_TESTING_ENABLED and env is sandbox|staging|internal + allowlist."""
+def is_mock_mode() -> bool:
+    """Mock only for pytest/CI/dev/PLAYWRIGHT_MOCK=1/admin explicit mock. Default production: 0."""
     settings = get_settings()
-    flag = os.environ.get("LIVE_TESTING_ENABLED", str(settings.live_testing_enabled)).lower() in ("1", "true", "yes")
-    if not flag:
-        return False, "LIVE_TESTING_ENABLED is false — refusing live browser payment runs"
+    raw = os.environ.get("PLAYWRIGHT_MOCK", str(settings.playwright_mock if settings.playwright_mock is not None else 0))
+    try:
+        return bool(int(raw))
+    except Exception:
+        return str(raw).lower() in ("1", "true", "yes")
+
+
+def live_testing_enabled() -> bool:
+    settings = get_settings()
+    return os.environ.get("LIVE_TESTING_ENABLED", str(settings.live_testing_enabled)).lower() in ("1", "true", "yes")
+
+
+def smoke_live_allowed(env: Optional[Environment], task: Optional[TaskPreset]) -> tuple[bool, str, str]:
+    """Production/local smoke (no card fill) is allowed even when LIVE_TESTING_ENABLED is false.
+    Returns (ok, error_code, reason).
+    """
+    task_type = (task.task_type if task else "smoke") or "smoke"
+    allow_fill = bool(task.allow_card_fill) if task else False
+    env_type = (env.env_type if env else (task.env_scope if task else "production")) or "production"
+    env_type = env_type.lower()
+
+    if task_type in ("smoke", "local_fixture") and not allow_fill:
+        # UI smoke / local fixture — real Chromium OK without LIVE_TESTING_ENABLED
+        if env and env.allowed_domains is not None and len(env.allowed_domains or []) == 0 and env_type not in ("local", "internal"):
+            return False, ENVIRONMENT_NOT_ALLOWED, "allowed_domains empty"
+        return True, "", "ok"
+
+    # payment_fill requires LIVE_TESTING + sandbox|staging|internal
+    if not live_testing_enabled():
+        return False, LIVE_TESTING_DISABLED, "LIVE_TESTING_ENABLED is false"
+    if env_type not in ("sandbox", "staging", "internal"):
+        return False, ENVIRONMENT_NOT_ALLOWED, f"env_type={env_type} not sandbox/staging/internal"
+    if env and not (env.allowed_domains or []):
+        return False, ENVIRONMENT_NOT_ALLOWED, "allowed_domains empty — fail closed"
+    if env and env.base_url and not is_url_allowed(env.base_url, env.allowed_domains or []):
+        return False, ENVIRONMENT_NOT_ALLOWED, "base_url outside allowed_domains"
+    return True, "", "ok"
+
+
+def live_testing_allowed(env: Environment) -> tuple[bool, str]:
+    """Legacy helper for payment fill workflows."""
+    ok, code, reason = smoke_live_allowed(env, None)
+    # Without task, treat as payment-fill policy (strict)
+    if not live_testing_enabled():
+        return False, LIVE_TESTING_DISABLED
     if (env.env_type or "").lower() not in ("sandbox", "staging", "internal"):
-        return False, f"env_type={env.env_type} not sandbox/staging/internal"
+        return False, ENVIRONMENT_NOT_ALLOWED
     if not (env.allowed_domains or []):
         return False, "allowed_domains empty — fail closed"
     if not is_url_allowed(env.base_url, env.allowed_domains or []):
@@ -97,6 +143,10 @@ def append_live_log(run: TestRun, msg: str) -> None:
     log = list(run.live_log or [])
     log.append({"ts": datetime.now(timezone.utc).isoformat(), "msg": msg})
     run.live_log = log[-200:]
+
+
+def set_run_step(run: TestRun, step: str) -> None:
+    run.current_step = step
 
 
 class MockBrowser:
@@ -377,6 +427,213 @@ async def _detect_result(page, mappings: Dict[str, PageMapping], payrails: Payra
     return UNKNOWN
 
 
+
+async def process_smoke_run(
+    db, run: TestRun, settings_obj: RunnerSettings,
+    env, account, network, proxy, task, mock: bool,
+    shot_root: Path, trace_root: Path,
+) -> None:
+    """One-click smoke / local_fixture quick-run across account_ids."""
+    from app.core.security import decrypt_secret
+    from worker.smoke_flow import run_smoke, session_path_for, resolve_fixture_url
+
+    settings = get_settings()
+    ok, err_code, reason = smoke_live_allowed(env, task)
+    if not mock and not ok:
+        append_live_log(run, f"ERROR {err_code}: {message_zh(err_code)} ({reason})")
+        run.status = "FAILED"
+        run.error_code = err_code
+        run.error_count = (run.error_count or 0) + 1
+        run.finished_at = datetime.now(timezone.utc)
+        set_run_step(run, err_code)
+        db.commit()
+        return
+
+    start_url = (task.start_url if task and task.start_url else None) or (env.base_url if env else "")
+    is_local = (task.task_type == "local_fixture") if task else (run.run_mode == "local_fixture")
+    open_modal = bool(task.open_add_card_modal) if task else True
+    browser_debug = bool(int(os.environ.get("BROWSER_DEBUG", getattr(settings, "browser_debug", 0) or 0)))
+
+    proxy_cfg = None
+    if network and network.mode == "proxy" and proxy:
+        proxy_cfg = {"server": f"socks5://{proxy.host}:{proxy.port}"}
+        if proxy.username:
+            proxy_cfg["username"] = proxy.username
+            if proxy.password_enc:
+                proxy_cfg["password"] = decrypt_secret(proxy.password_enc)
+
+    # Resolve accounts: account_ids list, else single account_id, else all READY
+    ids = list(run.account_ids or [])
+    if not ids and run.account_id:
+        ids = [run.account_id]
+    accounts = []
+    for aid in ids:
+        a = db.get(QAAccount, aid)
+        if a:
+            accounts.append(a)
+    if not accounts and is_local:
+        # Local fixture can run with a synthetic account (or none)
+        accounts = [None]
+    if not accounts:
+        append_live_log(run, f"ERROR {ACCOUNT_NOT_READY}: {message_zh(ACCOUNT_NOT_READY)}")
+        run.status = "FAILED"
+        run.error_code = ACCOUNT_NOT_READY
+        run.error_count = (run.error_count or 0) + 1
+        run.finished_at = datetime.now(timezone.utc)
+        db.commit()
+        return
+
+    run.progress_total = len(accounts)
+    db.commit()
+
+    for acct in accounts:
+        db.refresh(run)
+        if run.status == "STOPPING":
+            run.status = "STOPPED"
+            append_live_log(run, "Stopped by admin")
+            db.commit()
+            return
+
+        email = acct.email if acct else "qa@local.test"
+        password = decrypt_secret(acct.password_enc) if acct else "local-pass"
+        run.current_account = email
+        set_run_step(run, "Starting")
+        append_live_log(run, f"Account: {email}")
+        db.commit()
+
+        def _log(msg: str, _run=run, _db=db):
+            append_live_log(_run, msg)
+            try:
+                _db.commit()
+            except Exception:
+                pass
+
+        def _step(step: str, _run=run, _db=db):
+            set_run_step(_run, step)
+            try:
+                _db.commit()
+            except Exception:
+                pass
+
+        if mock:
+            # Explicit mock path only
+            append_live_log(run, "MOCK MODE simulating smoke PASS (not live Chromium)")
+            result = {
+                "expected": "TARGET_PAGE_READY", "actual": "TARGET_PAGE_READY", "status": "PASS",
+                "duration_ms": 50, "steps": [{"step": "mock_smoke", "ok": True}],
+                "screenshot_paths": [], "error_message": "MOCK MODE",
+                "pan_masked": None, "error_code": "MOCK_MODE", "is_mock": True, "trace_path": None,
+            }
+            # Write a tiny mock screenshot marker so UI isn't empty
+            shot_root.mkdir(parents=True, exist_ok=True)
+            shot = shot_root / f"mock_{int(datetime.now(timezone.utc).timestamp())}.png"
+            shot.write_bytes(
+                b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde"
+                b"\x00\x00\x00\x0cIDATx\x9cc\xf8\x0f\x00\x00\x01\x01\x00\x05\x18\xd8N\x00\x00\x00\x00IEND\xaeB`\x82"
+            )
+            result["screenshot_paths"] = [str(shot)]
+        else:
+            spath = None
+            if acct:
+                spath = session_path_for(acct.id, settings.session_dir)
+                if acct.session_path:
+                    spath = Path(acct.session_path)
+
+            result = await run_smoke(
+                start_url=start_url,
+                email=email,
+                password=password,
+                storage_state_path=spath,
+                screenshot_dir=shot_root / f"account_{acct.id if acct else 0}",
+                trace_dir=trace_root / f"account_{acct.id if acct else 0}",
+                log=_log,
+                set_step=_step,
+                proxy_cfg=proxy_cfg,
+                timeout_sec=settings_obj.timeout_sec,
+                open_modal=open_modal,
+                is_local_fixture=is_local,
+                browser_debug=browser_debug,
+                require_account=not is_local,
+            )
+
+            # Update account session status
+            if acct and not result.get("is_mock"):
+                if result.get("saved_state") and spath and spath.is_file():
+                    acct.session_status = "VALID"
+                    acct.session_path = str(spath)
+                    acct.session_updated_at = datetime.now(timezone.utc)
+                    acct.last_login_status = "OK"
+                elif result.get("error_code") == "SESSION_EXPIRED":
+                    acct.session_status = "EXPIRED"
+                elif result.get("status") == "PASS":
+                    acct.last_login_status = "OK"
+                elif result.get("error_code") in ("BAD_CREDENTIALS", "CAPTCHA", "LOGIN_BLOCKED"):
+                    acct.last_login_status = result.get("error_code")
+                    # Never rotate proxy on these
+                    append_live_log(run, f"No proxy rotate on {result.get('error_code')} (policy)")
+
+        # Network retry policy (only network codes)
+        if (not mock) and may_auto_switch_network(result.get("actual") or ""):
+            direct = db.query(NetworkProfile).filter(NetworkProfile.mode == "direct").first()
+            if direct and network and network.id != direct.id:
+                run.network_profile_id = direct.id
+                network = direct
+                proxy = None
+                append_live_log(run, f"Auto-switched Network Profile to Direct due to {result.get('actual')}")
+        elif forbid_proxy_rotate_on(result.get("actual") or ""):
+            append_live_log(run, f"No proxy rotate on {result.get('actual')} (policy)")
+
+        tr = TestResult(
+            run_id=run.id,
+            case_id=(task.key if task else "smoke"),
+            case_name=(task.name if task else "Smoke"),
+            expected=result.get("expected") or "TARGET_PAGE_READY",
+            actual=result.get("actual") or "UNKNOWN",
+            status=result.get("status") or "ERROR",
+            duration_ms=result.get("duration_ms") or 0,
+            steps=result.get("steps") or [],
+            screenshot_paths=result.get("screenshot_paths") or [],
+            account_email=email,
+            network_profile=network.name if network else None,
+            error_message=result.get("error_message"),
+            pan_masked=None,
+        )
+        # Attach trace path into steps meta
+        if result.get("trace_path"):
+            steps = list(tr.steps or [])
+            steps.append({"step": "trace", "ok": True, "path": result["trace_path"]})
+            tr.steps = steps
+
+        db.add(tr)
+        run.progress_done = (run.progress_done or 0) + 1
+        st = result.get("status")
+        if st == "PASS":
+            # Never count mock as live PASS without marking
+            if result.get("is_mock") or mock:
+                append_live_log(run, f"{email} → MOCK PASS (not live)")
+            else:
+                run.pass_count = (run.pass_count or 0) + 1
+                append_live_log(run, f"{email} → 成功 PASS")
+            if result.get("is_mock") or mock:
+                run.pass_count = (run.pass_count or 0) + 1  # still count but flagged is_mock on run
+        elif st == "FAIL":
+            run.fail_count = (run.fail_count or 0) + 1
+            append_live_log(run, f"{email} → 失败 FAIL")
+        else:
+            run.error_count = (run.error_count or 0) + 1
+            run.error_code = result.get("error_code") or run.error_code
+            append_live_log(run, f"{email} → 异常 ERROR ({result.get('error_code')})")
+        db.commit()
+        await asyncio.sleep(0.2)
+
+    run.status = "COMPLETED"
+    run.finished_at = datetime.now(timezone.utc)
+    run.current_case_id = None
+    set_run_step(run, "Completed")
+    append_live_log(run, "Completed")
+    db.commit()
+
+
 async def process_run(db, run: TestRun, settings_obj: RunnerSettings) -> None:
     env = db.get(Environment, run.environment_id)
     if not env:
@@ -395,22 +652,51 @@ async def process_run(db, run: TestRun, settings_obj: RunnerSettings) -> None:
     if network and network.proxy_id:
         proxy = db.get(Socks5Proxy, network.proxy_id)
 
-    account = db.get(QAAccount, run.account_id) if run.account_id else (
-        db.query(QAAccount).filter(QAAccount.status == "READY").first()
-    )
+    account = None
+    if run.account_id:
+        account = db.get(QAAccount, run.account_id)
+    elif getattr(run, "account_ids", None):
+        account = db.get(QAAccount, run.account_ids[0]) if run.account_ids else None
+    if not account:
+        account = db.query(QAAccount).filter(QAAccount.status == "READY").first()
 
     settings = get_settings()
-    mock = bool(int(os.environ.get("PLAYWRIGHT_MOCK", settings.playwright_mock or 0)))
+    mock = is_mock_mode()
+    # Admin explicit mock via run name / meta
+    if (run.name or "").startswith("[MOCK]") or (run.run_mode or "") == "mock":
+        mock = True
     shot_root = Path(settings.screenshot_dir) / f"run-{run.id}"
     shot_root.mkdir(parents=True, exist_ok=True)
+    trace_root = Path(settings.log_dir) / "traces" / f"run-{run.id}"
+    trace_root.mkdir(parents=True, exist_ok=True)
+
+    task = db.get(TaskPreset, run.task_preset_id) if getattr(run, "task_preset_id", None) else None
+    run_mode = (run.run_mode or (task.task_type if task else "workflow") or "workflow")
+    run.is_mock = mock
 
     run.status = "RUNNING"
     run.started_at = run.started_at or datetime.now(timezone.utc)
-    append_live_log(run, f"Worker started (mock={mock})")
+    append_live_log(run, f"Worker started mode={'MOCK' if mock else 'LIVE'} run_mode={run_mode}")
+    if mock:
+        append_live_log(run, "MOCK MODE — results are simulated, not live Chromium PASS")
     db.commit()
 
+    # ── Quick-run / smoke / local_fixture path ─────────
+    if run_mode in ("smoke", "local_fixture") or (task and task.task_type in ("smoke", "local_fixture")):
+        await process_smoke_run(db, run, settings_obj, env, account, network, proxy, task, mock, shot_root, trace_root)
+        return
+
     cases_done = 0
-    for case_id in list(run.case_ids or []):
+    case_list = list(run.case_ids or [])
+    if not case_list and run_mode == "payment_fill":
+        append_live_log(run, "No test cases for payment_fill — mark ERROR")
+        run.status = "FAILED"
+        run.error_code = "ACCOUNT_NOT_READY"
+        run.finished_at = datetime.now(timezone.utc)
+        db.commit()
+        return
+
+    for case_id in case_list:
         db.refresh(run)
         if run.status == "STOPPING":
             run.status = "STOPPED"
@@ -441,19 +727,36 @@ async def process_run(db, run: TestRun, settings_obj: RunnerSettings) -> None:
 
         if mock:
             result = await mock_run_case(case, env, payrails, mappings, steps, shot_root)
+            result["is_mock"] = True
         else:
             ok, reason = live_testing_allowed(env)
             if not ok:
-                append_live_log(run, f"Live testing refused: {reason} — force mock")
-                result = await mock_run_case(case, env, payrails, mappings, steps, shot_root)
-                result["error_message"] = (result.get("error_message") or "") + f" | live refused: {reason}"
+                # 1.3.0: NEVER force mock — emit ERROR code
+                code = reason if reason in (LIVE_TESTING_DISABLED, ENVIRONMENT_NOT_ALLOWED) else LIVE_TESTING_DISABLED
+                append_live_log(run, f"ERROR {code}: {message_zh(code)} ({reason})")
+                result = {
+                    "expected": case.expected_result, "actual": code, "status": "ERROR",
+                    "duration_ms": 0, "steps": [{"step": "policy", "ok": False, "msg": reason}],
+                    "screenshot_paths": [], "error_message": message_zh(code),
+                    "pan_masked": case.pan_masked, "error_code": code, "is_mock": False,
+                }
+                run.error_code = code
             else:
                 # Re-check allowlist before live payment
-                assert_navigation_allowed(env.base_url, env.allowed_domains or [])
-                result = await live_run_case(
-                    case, env, account, network, proxy, payrails, mappings, steps,
-                    shot_root, settings_obj.timeout_sec,
-                )
+                try:
+                    assert_navigation_allowed(env.base_url, env.allowed_domains or [])
+                except PermissionError as e:
+                    result = {
+                        "expected": case.expected_result, "actual": "ALLOWLIST_REFUSED", "status": "ERROR",
+                        "duration_ms": 0, "steps": [], "screenshot_paths": [],
+                        "error_message": str(e), "pan_masked": case.pan_masked,
+                        "error_code": "ALLOWLIST_REFUSED", "is_mock": False,
+                    }
+                else:
+                    result = await live_run_case(
+                        case, env, account, network, proxy, payrails, mappings, steps,
+                        shot_root, settings_obj.timeout_sec,
+                    )
 
         # Safety: never rotate proxy on decline/3DS/invalid
         if forbid_proxy_rotate_on(result["actual"]):
@@ -581,7 +884,7 @@ async def loop() -> None:
 
     settings = get_settings()
     poll = float(os.environ.get("WORKER_POLL_INTERVAL_SEC", settings.worker_poll_interval_sec))
-    mock_mode = bool(int(os.environ.get("PLAYWRIGHT_MOCK", settings.playwright_mock or 0)))
+    mock_mode = is_mock_mode()
     live_flag = os.environ.get("LIVE_TESTING_ENABLED", str(settings.live_testing_enabled))
     logger.info(
         "Worker started poll=%.1fs mock=%s live_testing=%s db=%s worker_id=%s",

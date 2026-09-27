@@ -4,7 +4,7 @@ ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
 
 echo "======== Payment QA Runner Diagnose ========"
-echo "Version:     1.2.0"
+echo "Version:     1.3.0"
 if [[ -d .git ]]; then
   echo "Git commit:  $(git rev-parse --short HEAD 2>/dev/null || echo n/a) ($(git log -1 --format=%s 2>/dev/null || true))"
   echo "Git remote:  $(git remote get-url origin 2>/dev/null || echo n/a)"

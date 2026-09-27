@@ -8,8 +8,8 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.security import hash_password
 from app.models.models import (
-    AdminUser, AccountCreationSettings, NetworkProfile, PageMapping,
-    PayrailsConfig, RunnerSettings, WorkflowStep,
+    AdminUser, AccountCreationSettings, Environment, NetworkProfile, PageMapping,
+    PayrailsConfig, RunnerSettings, TaskPreset, WorkflowStep,
 )
 
 logger = logging.getLogger(__name__)
@@ -155,5 +155,90 @@ def seed_all(db: Session) -> None:
             threeds_selectors=[],
         ))
         logger.info("Seeded empty Payrails config")
+
+    # 1.3.0 — Environments for smoke / local fixture (no live preply.com required)
+    if db.query(Environment).filter_by(name="Local Fixture").count() == 0:
+        db.add(Environment(
+            name="Local Fixture",
+            base_url="file://local-smoke",  # resolved by worker to fixture path
+            allowed_domains=["local-smoke", "localhost", "127.0.0.1", "backend"],
+            env_type="internal",
+            is_active=True,
+            notes="Local HTML fixture for proving Live Chromium without external credentials",
+        ))
+        logger.info("Seeded Local Fixture environment")
+
+    if db.query(Environment).filter_by(name="Preply Production Smoke").count() == 0:
+        db.add(Environment(
+            name="Preply Production Smoke",
+            base_url="https://preply.com/en/settings/payments",
+            allowed_domains=["preply.com", "www.preply.com"],
+            env_type="production",
+            is_active=True,
+            notes="UI Smoke ONLY — login + Payment methods + Add card. NO card fill/submit.",
+        ))
+        logger.info("Seeded Preply Production Smoke environment")
+
+    # Resolve env ids after flush
+    db.flush()
+    local_env = db.query(Environment).filter_by(name="Local Fixture").first()
+    preply_env = db.query(Environment).filter_by(name="Preply Production Smoke").first()
+
+    presets = [
+        {
+            "key": "preply_payment_smoke",
+            "name": "Preply Payment Page Smoke Test",
+            "name_zh": "Preply 支付页冒烟测试",
+            "description": "Login + reach Payment methods + Add card. Production UI smoke — no card fill.",
+            "description_zh": "登录并到达支付方式页，可选打开 Add card 弹窗。生产仅 UI Smoke，不填卡。",
+            "task_type": "smoke",
+            "start_url": "https://preply.com/en/settings/payments",
+            "environment_id": preply_env.id if preply_env else None,
+            "env_scope": "production",
+            "allow_card_fill": False,
+            "open_add_card_modal": True,
+            "allowed_domains": ["preply.com", "www.preply.com"],
+            "config": {"optional_open_modal": True},
+            "sort_order": 1,
+        },
+        {
+            "key": "local_chromium_smoke",
+            "name": "Local Chromium Smoke (fixture)",
+            "name_zh": "本地浏览器冒烟（夹具页）",
+            "description": "Proves real Chromium against local HTML fixture without Preply credentials.",
+            "description_zh": "使用本地 HTML 夹具验证真实 Chromium，无需 Preply 账号。",
+            "task_type": "local_fixture",
+            "start_url": "file://local-smoke",
+            "environment_id": local_env.id if local_env else None,
+            "env_scope": "local",
+            "allow_card_fill": False,
+            "open_add_card_modal": True,
+            "allowed_domains": ["local-smoke", "localhost", "127.0.0.1", "backend"],
+            "config": {"fixture": "local-smoke.html"},
+            "sort_order": 0,
+        },
+        {
+            "key": "authorized_sandbox_payment",
+            "name": "Authorized Sandbox Payment Test",
+            "name_zh": "授权沙箱支付测试（占位）",
+            "description": "Stub for sandbox card fill + Expected vs Actual. Requires LIVE_TESTING_ENABLED.",
+            "description_zh": "沙箱填卡 + 期望/实际对比占位。需开启 LIVE_TESTING_ENABLED。",
+            "task_type": "payment_fill",
+            "start_url": "",
+            "environment_id": None,
+            "env_scope": "sandbox",
+            "allow_card_fill": True,
+            "open_add_card_modal": True,
+            "allowed_domains": [],
+            "config": {"stub": True},
+            "sort_order": 10,
+            "is_active": True,
+        },
+    ]
+    for pr in presets:
+        if db.query(TaskPreset).filter_by(key=pr["key"]).count() == 0:
+            db.add(TaskPreset(**pr))
+            logger.info("Seeded task preset %s", pr["key"])
+
 
     db.commit()

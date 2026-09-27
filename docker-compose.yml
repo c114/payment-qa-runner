@@ -19,7 +19,8 @@ services:
       SCREENSHOT_DIR: /data/screenshots
       REPORT_DIR: /data/reports
       LOG_DIR: /data/logs
-      PLAYWRIGHT_MOCK: ${PLAYWRIGHT_MOCK:-1}
+      SESSION_DIR: /data/sessions
+      PLAYWRIGHT_MOCK: ${PLAYWRIGHT_MOCK:-0}
       LIVE_TESTING_ENABLED: ${LIVE_TESTING_ENABLED:-false}
       # Same-Origin deploy: CORS not required for browser→frontend→backend path.
       # Keep localhost for direct API debugging / local next dev.
@@ -45,12 +46,14 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: ${DATABASE_URL:-sqlite:////data/payment_qa.db}
-      PLAYWRIGHT_MOCK: ${PLAYWRIGHT_MOCK:-1}
+      PLAYWRIGHT_MOCK: ${PLAYWRIGHT_MOCK:-0}
       LIVE_TESTING_ENABLED: ${LIVE_TESTING_ENABLED:-false}
       SCREENSHOT_DIR: /data/screenshots
       REPORT_DIR: /data/reports
       LOG_DIR: /data/logs
+      SESSION_DIR: /data/sessions
       WORKER_HEARTBEAT_FILE: /data/logs/worker.heartbeat
+      # FIXTURE_BASE_URL unset → worker uses bundled file:// fixture
     volumes:
       - ./data:/data
     networks:
@@ -76,6 +79,9 @@ services:
       BACKEND_URL: http://backend:8000
       HOSTNAME: "0.0.0.0"
       PORT: "3000"
+    # Nested/limited Docker DNS: also resolve backend via host-published port
+    extra_hosts:
+      - "backend:host-gateway"
     ports:
       - "3000:3000"
     networks:

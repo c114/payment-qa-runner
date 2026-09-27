@@ -54,6 +54,20 @@ def ensure_schema() -> None:
             ("last_heartbeat", "TIMESTAMP"),
             ("last_activity", "TIMESTAMP"),
         ],
+        "qa_accounts": [
+            ("session_status", "VARCHAR(32)"),
+            ("session_path", "VARCHAR(512)"),
+            ("session_updated_at", "TIMESTAMP"),
+        ],
+        "test_runs": [
+            ("task_preset_id", "INTEGER"),
+            ("account_ids", "JSON"),
+            ("current_account", "VARCHAR(255)"),
+            ("current_step", "VARCHAR(128)"),
+            ("run_mode", "VARCHAR(32)"),
+            ("is_mock", "BOOLEAN"),
+            ("error_code", "VARCHAR(64)"),
+        ],
     }
     with engine.begin() as conn:
         for table, additions in cols.items():

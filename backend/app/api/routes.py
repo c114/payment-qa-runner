@@ -26,8 +26,9 @@ from app.core.security import (
 from app.models.models import (
     AdminUser, AccountCreationSettings, AppLog, BrowserSession, Environment,
     NetworkProfile, PageMapping, PayrailsConfig, QAAccount, RunnerSettings,
-    Socks5Proxy, SystemSettings, TestCase, TestResult, TestRun, WorkflowStep,
+    Socks5Proxy, SystemSettings, TaskPreset, TestCase, TestResult, TestRun, WorkflowStep,
 )
+from app.services.error_codes import message_zh, ui_payload
 from app.schemas.schemas import *
 from app.services.account_creation import can_enable_account_creation
 from app.services.allowlist import assert_navigation_allowed, is_url_allowed, validate_environment_url
@@ -134,14 +135,23 @@ def health(db: Session = Depends(get_db)):
     except Exception:
         browser_status = "idle"
 
+    # Resolve mock from env (production default 0)
+    import os as _os
+    try:
+        mock_flag = bool(int(_os.environ.get("PLAYWRIGHT_MOCK", str(settings.playwright_mock))))
+    except Exception:
+        mock_flag = bool(settings.playwright_mock)
+    mode = "MOCK" if mock_flag else "LIVE"
+
     return {
         "backend": _component("ok", now_iso),
         "database": _component("ok" if db_ok else "down", now_iso),
         "worker": _component(worker_status, worker_last or now_iso),
         "browser_worker": _component(browser_status, browser_last or now_iso),
-        "mock": bool(settings.playwright_mock),
+        "mock": mock_flag,
+        "mode": mode,
         "live_testing_enabled": bool(settings.live_testing_enabled),
-        "version": "1.2.0",
+        "version": settings.app_version or "1.3.0",
         "time": now_iso,
     }
 
@@ -1501,4 +1511,171 @@ def download_screenshot(path: str, db: Session = Depends(get_db), admin: AdminUs
 
 @router.get("/version")
 def api_version():
-    return {"version": "1.2.0", "name": "Payment QA Runner"}
+    return {"version": get_settings().app_version or "1.3.0", "name": "Payment QA Runner"}
+
+
+
+# ── 1.3.0 Task Presets / Quick Run / Sessions ─────────
+@router.get("/task-presets", response_model=List[TaskPresetOut])
+def list_task_presets(db: Session = Depends(get_db), admin: AdminUser = Depends(get_current_admin)):
+    return (
+        db.query(TaskPreset)
+        .filter(TaskPreset.is_active == True)  # noqa: E712
+        .order_by(TaskPreset.sort_order, TaskPreset.id)
+        .all()
+    )
+
+
+@router.get("/task-presets/{tid}", response_model=TaskPresetOut)
+def get_task_preset(tid: int, db: Session = Depends(get_db), admin: AdminUser = Depends(get_current_admin)):
+    tsk = db.get(TaskPreset, tid)
+    if not tsk:
+        raise HTTPException(404, "Task not found")
+    return tsk
+
+
+@router.post("/quick-run", response_model=QuickRunOut)
+def quick_run(body: QuickRunIn, db: Session = Depends(get_db), admin: AdminUser = Depends(get_current_admin)):
+    """One-click: select task + accounts → queue worker → return run_id."""
+    task = db.get(TaskPreset, body.task_id)
+    if not task or not task.is_active:
+        raise HTTPException(404, ui_payload("TASK_NOT_FOUND"))
+
+    # Resolve environment
+    env = db.get(Environment, task.environment_id) if task.environment_id else None
+    if not env:
+        # For local_fixture / smoke without env row, create ephemeral lookup
+        if task.task_type == "local_fixture":
+            env = db.query(Environment).filter(Environment.name == "Local Fixture").first()
+        elif task.env_scope == "production":
+            env = db.query(Environment).filter(Environment.name == "Preply Production Smoke").first()
+    if not env:
+        # Last resort: any active env matching scope
+        env = db.query(Environment).filter(Environment.is_active == True).first()  # noqa
+    if not env:
+        raise HTTPException(400, ui_payload("ENVIRONMENT_MISSING"))
+
+    account_ids = list(body.account_ids or [])
+    if not account_ids and task.task_type != "local_fixture":
+        # Allow empty for local fixture; otherwise require accounts
+        raise HTTPException(400, ui_payload("ACCOUNT_MISSING", "Select at least one account"))
+
+    # Validate accounts exist
+    for aid in account_ids:
+        if not db.get(QAAccount, aid):
+            raise HTTPException(400, ui_payload("ACCOUNT_NOT_READY", f"account id={aid}"))
+
+    import os as _os
+    try:
+        mock_flag = bool(int(_os.environ.get("PLAYWRIGHT_MOCK", "0")))
+    except Exception:
+        mock_flag = False
+    if body.force_mock:
+        mock_flag = True
+
+    run_mode = task.task_type or "smoke"
+    if mock_flag:
+        run_mode_name = f"[MOCK] {task.name}"
+    else:
+        run_mode_name = task.name_zh or task.name
+
+    run = TestRun(
+        name=run_mode_name,
+        environment_id=env.id,
+        account_id=account_ids[0] if account_ids else None,
+        account_ids=account_ids,
+        network_profile_id=body.network_profile_id,
+        case_ids=[task.key],
+        run_count=str(max(len(account_ids), 1)),
+        status="QUEUED",
+        progress_total=max(len(account_ids), 1),
+        task_preset_id=task.id,
+        run_mode="mock" if mock_flag else run_mode,
+        is_mock=mock_flag,
+        live_log=[{"ts": datetime.now(timezone.utc).isoformat(),
+                   "msg": f"Quick run queued: {task.name} (mode={'MOCK' if mock_flag else 'LIVE'})"}],
+    )
+    db.add(run)
+    db.commit()
+    db.refresh(run)
+    _log(db, "INFO", "api", f"quick-run created id={run.id} task={task.key}", {"run_id": run.id})
+    return QuickRunOut(run_id=run.id, status=run.status)
+
+
+@router.get("/quick-run/{run_id}")
+def quick_run_status(run_id: int, db: Session = Depends(get_db), admin: AdminUser = Depends(get_current_admin)):
+    run = db.get(TestRun, run_id)
+    if not run:
+        raise HTTPException(404)
+    return {
+        "run_id": run.id,
+        "status": run.status,
+        "progress_done": run.progress_done or 0,
+        "progress_total": run.progress_total or 0,
+        "current_account": run.current_account,
+        "current_step": run.current_step,
+        "success_count": run.pass_count or 0,
+        "pass_count": run.pass_count or 0,
+        "fail_count": run.fail_count or 0,
+        "error_count": run.error_count or 0,
+        "live_log": run.live_log or [],
+        "is_mock": bool(run.is_mock),
+        "run_mode": run.run_mode or "smoke",
+        "error_code": run.error_code,
+        "error_message_zh": message_zh(run.error_code) if run.error_code else None,
+        "started_at": run.started_at.isoformat() if run.started_at else None,
+        "finished_at": run.finished_at.isoformat() if run.finished_at else None,
+    }
+
+
+@router.post("/quick-run/{run_id}/stop")
+def quick_run_stop(run_id: int, db: Session = Depends(get_db), admin: AdminUser = Depends(get_current_admin)):
+    run = db.get(TestRun, run_id)
+    if not run:
+        raise HTTPException(404)
+    if run.status in ("QUEUED", "RUNNING", "PAUSED"):
+        run.status = "STOPPING"
+        db.commit()
+    return {"ok": True, "status": run.status}
+
+
+@router.post("/accounts/{aid}/clear-session")
+def clear_account_session(aid: int, db: Session = Depends(get_db), admin: AdminUser = Depends(get_current_admin)):
+    acct = db.get(QAAccount, aid)
+    if not acct:
+        raise HTTPException(404)
+    from pathlib import Path as _P
+    if acct.session_path:
+        try:
+            _P(acct.session_path).unlink(missing_ok=True)
+        except Exception:
+            pass
+    acct.session_status = "NONE"
+    acct.session_path = None
+    acct.session_updated_at = None
+    db.commit()
+    return {"ok": True, "session_status": "NONE"}
+
+
+@router.post("/accounts/{aid}/relogin")
+def relogin_account_session(aid: int, db: Session = Depends(get_db), admin: AdminUser = Depends(get_current_admin)):
+    """Clear session and queue a smoke quick-run for this account alone (admin)."""
+    acct = db.get(QAAccount, aid)
+    if not acct:
+        raise HTTPException(404)
+    from pathlib import Path as _P
+    if acct.session_path:
+        try:
+            _P(acct.session_path).unlink(missing_ok=True)
+        except Exception:
+            pass
+    acct.session_status = "NONE"
+    acct.session_path = None
+    db.commit()
+    task = db.query(TaskPreset).filter(TaskPreset.key == "preply_payment_smoke").first()
+    if not task:
+        task = db.query(TaskPreset).filter(TaskPreset.task_type == "smoke").first()
+    if not task:
+        return {"ok": True, "session_status": "NONE", "queued_run_id": None, "note": "No smoke task; session cleared"}
+    out = quick_run(QuickRunIn(task_id=task.id, account_ids=[aid]), db, admin)
+    return {"ok": True, "session_status": "NONE", "queued_run_id": out.run_id}

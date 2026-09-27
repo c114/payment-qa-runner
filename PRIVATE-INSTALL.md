@@ -17,4 +17,4 @@ cd /opt/payment-qa-runner && sudo bash install.sh
 
 If the repo is ever made private again, use `gh auth login` + `gh repo clone c114/payment-qa-runner`.
 
-Same-Origin (1.2.0): open only `http://SERVER:3000` — no manual `NEXT_PUBLIC_API_URL` / CORS IP edits.
+Same-Origin (1.3.0): open only `http://SERVER:3000` — no manual `NEXT_PUBLIC_API_URL` / CORS IP edits.

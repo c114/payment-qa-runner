@@ -52,3 +52,7 @@ docker-compose.override.yml
 .cursor/
 *.pem
 *.key
+# Sessions / traces (runtime)
+data/sessions/
+**/trace.zip
+**/traces/

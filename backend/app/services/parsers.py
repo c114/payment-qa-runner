@@ -43,6 +43,7 @@ def parse_qa_accounts(text: str) -> ParseResult:
       email\\tpassword
       email password
       email|password
+      email----password
       name|email|password
       name|email|password|tag
     Lines starting with # are comments. Header rows are skipped when detected.
@@ -57,6 +58,20 @@ def parse_qa_accounts(text: str) -> ParseResult:
             continue
 
         email, password, display_name, tag = "", "", None, None
+
+        # email----password (common paste format)
+        if "----" in line and "|" not in line:
+            parts = [p.strip() for p in line.split("----", 1)]
+            if len(parts) == 2 and "@" in parts[0]:
+                email, password = parts[0], parts[1]
+                if email and password:
+                    item = {"email": email, "password": password}
+                    if display_name:
+                        item["display_name"] = display_name
+                    result.items.append(item)
+                else:
+                    result.errors.append(f"line {i}: missing email/password")
+                continue
 
         # pipe / csv multi-field first
         if "|" in line or ("," in line and line.count(",") >= 2):

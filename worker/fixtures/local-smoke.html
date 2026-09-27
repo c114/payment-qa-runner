@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Local Smoke Fixture — Payment QA Runner</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; background: #0f1419; color: #e7ecf3; }
+    .card { background: #1a2332; border: 1px solid #2a3548; border-radius: 8px; padding: 1.5rem; max-width: 480px; }
+    input { display: block; width: 100%; margin: 0.5rem 0 1rem; padding: 0.5rem; border-radius: 4px; border: 1px solid #3a4558; background: #0c1017; color: #fff; }
+    button { background: #3b82f6; color: #fff; border: 0; padding: 0.6rem 1.2rem; border-radius: 6px; cursor: pointer; }
+    button.secondary { background: #334155; }
+    .hidden { display: none !important; pointer-events: none !important; }
+    .banner { background: #854d0e; color: #fef9c3; padding: 0.5rem 1rem; border-radius: 6px; margin-bottom: 1rem; font-size: 0.9rem; }
+    .cookie { position: fixed; bottom: 1rem; left: 1rem; right: 1rem; background: #1e293b; padding: 1rem; border-radius: 8px; display: flex; gap: 1rem; align-items: center; }
+    h1 { font-size: 1.25rem; }
+    .modal { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: flex; align-items: center; justify-content: center; }
+    .modal .inner { background: #1a2332; padding: 1.5rem; border-radius: 8px; min-width: 320px; }
+  </style>
+</head>
+<body>
+  <div id="cookie-banner" class="cookie">
+    <span>We use cookies for this local fixture.</span>
+    <button id="accept-cookies" type="button">Accept</button>
+  </div>
+
+  <div id="login-page" class="card">
+    <div class="banner">Email confirmation (ignore if targets visible)</div>
+    <h1>Log in</h1>
+    <form id="login-form">
+      <label for="email">Email</label>
+      <input id="email" name="email" type="email" placeholder="Email" autocomplete="username" />
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" placeholder="Password" autocomplete="current-password" />
+      <button type="submit">Log in</button>
+    </form>
+    <p id="login-error" class="hidden" style="color:#f87171">Invalid email or password</p>
+  </div>
+
+  <div id="payments-page" class="card hidden">
+    <h1>Payment methods</h1>
+    <p>Manage your saved cards.</p>
+    <button id="add-card" type="button">Add card</button>
+  </div>
+
+  <div id="modal" class="modal hidden">
+    <div class="inner">
+      <h2>Save a payment card</h2>
+      <p>Card fields are intentionally empty for smoke tests.</p>
+      <button id="close-modal" class="secondary" type="button">Close</button>
+    </div>
+  </div>
+
+  <script>
+    const params = new URLSearchParams(location.search);
+    const page = params.get("page") || "login";
+    const authed = sessionStorage.getItem("pqa_authed") === "1";
+
+    function show(id) {
+      document.getElementById("login-page").classList.add("hidden");
+      document.getElementById("payments-page").classList.add("hidden");
+      document.getElementById(id).classList.remove("hidden");
+    }
+
+    document.getElementById("accept-cookies").onclick = () => {
+      document.getElementById("cookie-banner").classList.add("hidden");
+    };
+
+    if ((page === "payments" || page === "payments") && authed) {
+      history.replaceState({}, "", "?page=payments");
+      show("payments-page");
+    } else if (page === "payments" && !authed) {
+      // Simulate redirect to login when not authenticated
+      history.replaceState({}, "", "?page=login");
+      show("login-page");
+    } else {
+      show("login-page");
+    }
+
+    document.getElementById("login-form").onsubmit = (e) => {
+      e.preventDefault();
+      const email = document.getElementById("email").value.trim();
+      const password = document.getElementById("password").value;
+      if (email === "bad@test.local") {
+        document.getElementById("login-error").classList.remove("hidden");
+        return;
+      }
+      if (!email || !password) {
+        document.getElementById("login-error").classList.remove("hidden");
+        return;
+      }
+      sessionStorage.setItem("pqa_authed", "1");
+      history.replaceState({}, "", "?page=payments");
+      show("payments-page");
+    };
+
+    document.getElementById("add-card").onclick = () => {
+      document.getElementById("modal").classList.remove("hidden");
+    };
+    document.getElementById("close-modal").onclick = () => {
+      document.getElementById("modal").classList.add("hidden");
+    };
+  </script>
+</body>
+</html>

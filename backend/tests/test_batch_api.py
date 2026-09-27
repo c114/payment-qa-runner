@@ -54,10 +54,10 @@ def test_template_download(client: TestClient):
 def test_version_endpoint(client: TestClient):
     r = client.get("/api/version")
     assert r.status_code == 200
-    assert r.json()["version"] == "1.2.0"
+    assert r.json()["version"].startswith("1.3")
 
 
 def test_health_has_version(client: TestClient):
     r = client.get("/api/health")
     assert r.status_code == 200
-    assert r.json().get("version") == "1.2.0"
+    assert str(r.json().get("version","")).startswith("1.3")

@@ -1,4 +1,15 @@
 import os
+import sys
+from pathlib import Path
+
+# Project root on path so `worker.*` imports work in tests
+_ROOT = Path(__file__).resolve().parents[2]
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+if str(_ROOT / "backend") not in sys.path:
+    sys.path.insert(0, str(_ROOT / "backend"))
+
+import os
 os.environ.setdefault("JWT_SECRET", "test-secret")
 os.environ.setdefault("ENCRYPTION_KEY", "")
 os.environ.setdefault("PLAYWRIGHT_MOCK", "1")
@@ -8,6 +19,7 @@ os.environ.setdefault("ADMIN_PASSWORD", "ChangeMe_Admin_123!")
 os.environ.setdefault("SCREENSHOT_DIR", "/tmp/pqa_screenshots")
 os.environ.setdefault("REPORT_DIR", "/tmp/pqa_reports")
 os.environ.setdefault("LOG_DIR", "/tmp/pqa_logs")
+os.environ.setdefault("SESSION_DIR", "/tmp/pqa_sessions")
 
 import pytest
 from fastapi.testclient import TestClient

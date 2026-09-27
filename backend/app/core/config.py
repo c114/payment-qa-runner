@@ -23,9 +23,9 @@ class Settings(BaseSettings):
     backend_host: str = "0.0.0.0"
     backend_port: int = 8000
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
-    app_version: str = "1.2.0"
+    app_version: str = "1.3.0"
 
-    playwright_mock: int = 1
+    playwright_mock: int = 0
     live_testing_enabled: bool = False
     session_secret: str = ""
     proxy_test_url: str = "http://1.1.1.1/"
@@ -35,6 +35,8 @@ class Settings(BaseSettings):
     screenshot_dir: str = "/workspace/payment-qa-runner/data/screenshots"
     report_dir: str = "/workspace/payment-qa-runner/data/reports"
     log_dir: str = "/workspace/payment-qa-runner/data/logs"
+    session_dir: str = "/workspace/payment-qa-runner/data/sessions"
+    browser_debug: int = 0
 
     @property
     def cors_origin_list(self) -> List[str]:
@@ -52,7 +54,7 @@ def get_settings() -> Settings:
 
 def ensure_data_dirs() -> None:
     s = get_settings()
-    candidates = [s.screenshot_dir, s.report_dir, s.log_dir]
+    candidates = [s.screenshot_dir, s.report_dir, s.log_dir, s.session_dir]
     if s.database_url.startswith("sqlite"):
         # sqlite:////abs/path.db → /abs/path.db ; sqlite:///rel.db → rel.db
         if s.database_url.startswith("sqlite:////"):

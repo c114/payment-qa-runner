@@ -5,7 +5,7 @@ set -euo pipefail
 
 REPO_SLUG="c114/payment-qa-runner"
 INSTALL_DIR="${INSTALL_DIR:-/opt/payment-qa-runner}"
-VERSION="1.2.0"
+VERSION="1.3.0"
 
 need_root() {
   if [[ "${EUID}" -ne 0 ]]; then
@@ -123,7 +123,8 @@ fi
 
 cd "$ROOT"
 
-mkdir -p data/screenshots data/reports data/logs backups
+mkdir -p data/screenshots data/reports data/logs data/sessions backups
+chmod 700 data/sessions 2>/dev/null || true
 chmod 755 data data/screenshots data/reports data/logs backups
 
 if [[ ! -f .env ]]; then
@@ -156,7 +157,7 @@ if is_weak_admin_pw "$admin_pw"; then
 fi
 
 # Safe defaults — Same-Origin: no NEXT_PUBLIC_API_URL / public CORS IP required
-set_env_kv PLAYWRIGHT_MOCK "1" .env
+set_env_kv PLAYWRIGHT_MOCK "0" .env
 set_env_kv LIVE_TESTING_ENABLED "false" .env
 set_env_kv CORS_ORIGINS "http://localhost:3000,http://127.0.0.1:3000" .env
 # Remove any baked NEXT_PUBLIC_API_URL so browser uses same-origin /api

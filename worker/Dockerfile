@@ -11,12 +11,14 @@ RUN pip install --no-cache-dir -r /app/backend-requirements.txt playwright==1.49
     && playwright install chromium || true
 COPY backend /app/backend
 COPY worker /app/worker
+COPY docs /app/docs
 ENV PYTHONPATH=/app/backend:/app
 ENV DATABASE_URL=sqlite:////data/payment_qa.db
 ENV SCREENSHOT_DIR=/data/screenshots
 ENV REPORT_DIR=/data/reports
 ENV LOG_DIR=/data/logs
-ENV PLAYWRIGHT_MOCK=1
+ENV SESSION_DIR=/data/sessions
+ENV PLAYWRIGHT_MOCK=0
 ENV LIVE_TESTING_ENABLED=false
 ENV WORKER_HEARTBEAT_FILE=/data/logs/worker.heartbeat
 WORKDIR /app

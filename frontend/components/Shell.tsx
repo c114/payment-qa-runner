@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Locale, navItems, t } from "@/lib/i18n";
+import { Locale, mainNavItems, advancedNavItems, t } from "@/lib/i18n";
 import { api, getToken, setToken } from "@/lib/api";
 import clsx from "clsx";
 
@@ -12,6 +12,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [locale, setLocale] = useState<Locale>("zh");
   const [helpOpen, setHelpOpen] = useState(false);
   const [helpText, setHelpText] = useState("");
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [mockMode, setMockMode] = useState(false);
   const isLogin = pathname === "/login";
 
   useEffect(() => {
@@ -23,18 +25,41 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     if (!isLogin && !getToken()) router.replace("/login");
   }, [isLogin, router, pathname]);
 
+  useEffect(() => {
+    if (isLogin) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const h = await api<{ mode?: string; mock?: boolean }>("/health");
+        if (!cancelled) setMockMode(h.mode === "MOCK" || !!h.mock);
+      } catch { /* ignore */ }
+    })();
+    const iv = setInterval(async () => {
+      try {
+        const h = await api<{ mode?: string; mock?: boolean }>("/health");
+        if (!cancelled) setMockMode(h.mode === "MOCK" || !!h.mock);
+      } catch { /* ignore */ }
+    }, 10000);
+    return () => { cancelled = true; clearInterval(iv); };
+  }, [isLogin]);
+
+  useEffect(() => {
+    // Auto-expand advanced if on an advanced page
+    if (advancedNavItems.some((i) => i.href === pathname)) setAdvancedOpen(true);
+  }, [pathname]);
+
   const switchLocale = (l: Locale) => {
     setLocale(l);
     localStorage.setItem("pqa_locale", l);
   };
 
   const openHelp = async () => {
-    const key = pathname === "/" ? "dashboard" : pathname.replace(/^\//, "").replace(/\//g, "-") || "default";
+    const key = pathname === "/" ? "start" : pathname.replace(/^\//, "").replace(/\//g, "-") || "default";
     try {
       const h = await api<{ zh: string; en: string }>(`/help/${key}`);
       setHelpText(locale === "zh" ? h.zh : h.en);
     } catch {
-      setHelpText(locale === "zh" ? "查看 README / Help Center。" : "See README / Help Center.");
+      setHelpText(locale === "zh" ? "导入账号 → 选择任务 → 点击开始。高级设置仅管理员使用。" : "Import accounts → select task → START. Advanced is for admins.");
     }
     setHelpOpen(true);
   };
@@ -46,16 +71,36 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       <aside className="w-56 shrink-0 border-r border-surface-border bg-[#0c1017] p-3 flex flex-col">
         <div className="mb-4 px-2">
           <div className="text-sm font-bold tracking-wide text-accent">Payment QA</div>
-          <div className="text-xs text-surface-muted">Runner</div>
+          <div className="text-xs text-surface-muted">Runner 1.3.0</div>
         </div>
         <nav className="flex-1 space-y-0.5 overflow-y-auto">
-          {navItems.map((item) => (
+          {mainNavItems.map((item) => (
             <Link
               key={item.href}
               href={item.href}
               className={clsx(
                 "block rounded-md px-2 py-1.5 text-sm",
                 pathname === item.href ? "bg-accent/20 text-accent" : "text-slate-300 hover:bg-surface-card"
+              )}
+            >
+              {t(locale, item.key)}
+            </Link>
+          ))}
+          <button
+            type="button"
+            className="mt-3 w-full text-left rounded-md px-2 py-1.5 text-sm text-slate-400 hover:bg-surface-card flex items-center justify-between"
+            onClick={() => setAdvancedOpen((v) => !v)}
+          >
+            <span>{t(locale, "advanced")}</span>
+            <span className="text-xs">{advancedOpen ? "▾" : "▸"}</span>
+          </button>
+          {advancedOpen && advancedNavItems.map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={clsx(
+                "block rounded-md px-2 py-1.5 text-sm ml-2",
+                pathname === item.href ? "bg-accent/20 text-accent" : "text-slate-400 hover:bg-surface-card"
               )}
             >
               {t(locale, item.key)}
@@ -74,6 +119,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </button>
       </aside>
       <main className="flex-1 flex flex-col min-w-0">
+        {mockMode && (
+          <div className="bg-amber-500 text-black text-center text-sm font-bold py-2 px-4 tracking-wide">
+            ⚠ MOCK MODE — {t(locale, "mockBanner")}
+          </div>
+        )}
         <header className="flex items-center justify-between border-b border-surface-border px-6 py-3">
           <h1 className="text-lg font-semibold">{t(locale, "appName")}</h1>
           <button className="btn-ghost" onClick={openHelp}>{t(locale, "helpBtn")}</button>

@@ -85,6 +85,9 @@ class QAAccountOut(BaseModel):
     last_login_status: Optional[str] = None
     last_used_at: Optional[datetime] = None
     notes: Optional[str] = None
+    session_status: Optional[str] = "NONE"
+    session_path: Optional[str] = None
+    session_updated_at: Optional[datetime] = None
     created_at: datetime
     model_config = {"from_attributes": True}
 
@@ -178,6 +181,7 @@ class TestRunCreate(BaseModel):
 
 
 class TestRunOut(BaseModel):
+    # extended in from_attributes; extra fields optional
     id: int
     name: str
     environment_id: int
@@ -193,6 +197,13 @@ class TestRunOut(BaseModel):
     fail_count: int
     error_count: int
     current_case_id: Optional[str] = None
+    task_preset_id: Optional[int] = None
+    account_ids: List[int] = Field(default_factory=list)
+    current_account: Optional[str] = None
+    current_step: Optional[str] = None
+    run_mode: str = "workflow"
+    is_mock: bool = False
+    error_code: Optional[str] = None
     live_log: List[Any] = Field(default_factory=list)
     started_at: Optional[datetime] = None
     finished_at: Optional[datetime] = None
@@ -286,3 +297,54 @@ class ImportMappingIn(BaseModel):
 class MessageOut(BaseModel):
     message: str
     detail: Any = None
+
+
+# ── 1.3.0 Quick Run / Task Presets ────────────────────
+class TaskPresetOut(BaseModel):
+    id: int
+    key: str
+    name: str
+    name_zh: str = ""
+    description: Optional[str] = None
+    description_zh: Optional[str] = None
+    task_type: str
+    start_url: str = ""
+    environment_id: Optional[int] = None
+    env_scope: str = "production"
+    allow_card_fill: bool = False
+    open_add_card_modal: bool = True
+    allowed_domains: List[str] = Field(default_factory=list)
+    is_active: bool = True
+    sort_order: int = 0
+    model_config = {"from_attributes": True}
+
+
+class QuickRunIn(BaseModel):
+    task_id: int
+    account_ids: List[int] = Field(default_factory=list)
+    network_profile_id: Optional[int] = None
+    # Admin-only explicit mock (also PLAYWRIGHT_MOCK=1)
+    force_mock: bool = False
+
+
+class QuickRunOut(BaseModel):
+    run_id: int
+    status: str = "QUEUED"
+
+
+class QuickRunStatusOut(BaseModel):
+    run_id: int
+    status: str
+    progress_done: int = 0
+    progress_total: int = 0
+    current_account: Optional[str] = None
+    current_step: Optional[str] = None
+    success_count: int = 0
+    fail_count: int = 0
+    error_count: int = 0
+    pass_count: int = 0  # alias
+    live_log: List[Any] = Field(default_factory=list)
+    is_mock: bool = False
+    run_mode: str = "smoke"
+    error_code: Optional[str] = None
+    error_message_zh: Optional[str] = None
