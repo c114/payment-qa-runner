@@ -44,5 +44,17 @@ def get_db():
 
 
 def ensure_schema() -> None:
-    """2.0 uses create_all + Alembic; no 1.x column patches."""
-    pass
+    """Additive SQLite column patches for 2.0.x (safe on fresh + existing DBs)."""
+    from sqlalchemy import text
+    settings = get_settings()
+    if not settings.database_url.startswith("sqlite"):
+        return
+    with engine.begin() as conn:
+        cols_tasks = {r[1] for r in conn.execute(text("PRAGMA table_info(tasks)")).fetchall()}
+        if "adapter_type" not in cols_tasks:
+            conn.execute(text(
+                "ALTER TABLE tasks ADD COLUMN adapter_type VARCHAR(64) DEFAULT 'standard_sandbox_binding'"
+            ))
+        cols_items = {r[1] for r in conn.execute(text("PRAGMA table_info(run_items)")).fetchall()}
+        if "final_url" not in cols_items:
+            conn.execute(text("ALTER TABLE run_items ADD COLUMN final_url VARCHAR(1024)"))

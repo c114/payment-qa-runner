@@ -12,6 +12,16 @@ from app.services.result_codes import (
 StepCb = Callable[[str, str], None]
 
 
+def _ret(page, code: str, reason: str) -> dict[str, Any]:
+    url = ""
+    try:
+        url = page.url or ""
+    except Exception:
+        pass
+    return {"code": code, "reason": reason, "final_url": url}
+
+
+
 def _safe_goto(page, url: str, timeout_ms: int = 25000) -> None:
     try:
         page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
@@ -68,13 +78,13 @@ def run_preply_smoke(
         try:
             _safe_goto(page, target_url)
         except Exception as e:
-            return {"code": ERROR_NETWORK, "reason": str(e)[:200]}
+            return _ret(page, ERROR_NETWORK, str(e)[:200])
 
         step("WAITING_PAGE", "wait stable")
         _wait_stable(page, 15)
 
         if stopped():
-            return {"code": "CANCELLED", "reason": "stopped"}
+            return _ret(page, "CANCELLED", "stopped")
 
         # Redirected to login?
         url = page.url.lower()
@@ -102,10 +112,10 @@ def run_preply_smoke(
                 page.fill(pass_sel, password, timeout=10000)
                 page.click("button[type='submit']", timeout=10000)
             except Exception as e:
-                return {"code": ERROR_LOGIN_TIMEOUT, "reason": str(e)[:200]}
+                return _ret(page, ERROR_LOGIN_TIMEOUT, str(e)[:200])
             _wait_stable(page, 15)
             if "login" in page.url.lower() and page.locator("input[type='password']").count() > 0:
-                return {"code": ERROR_BAD_CREDENTIALS, "reason": "login did not complete"}
+                return _ret(page, ERROR_BAD_CREDENTIALS, "login did not complete")
             step("AUTH_SUCCESS", "logged in")
             # Return to payments
             step("TARGET_LOADING", "return to payments")
@@ -118,12 +128,12 @@ def run_preply_smoke(
         try:
             body = page.inner_text("body")
         except Exception as e:
-            return {"code": ERROR_BROWSER, "reason": str(e)[:200]}
+            return _ret(page, ERROR_BROWSER, str(e)[:200])
 
         has_pm = "Payment methods" in body or "payment method" in body.lower()
         has_add = "Add card" in body or page.locator("text=Add card").count() > 0
         if not has_pm and not has_add:
-            return {"code": ERROR_TARGET, "reason": "Payment methods / Add card not found"}
+            return _ret(page, ERROR_TARGET, "Payment methods / Add card not found")
 
         if open_add_card and has_add:
             step("FORM_OPEN", "open Add card (detect only)")
@@ -138,13 +148,13 @@ def run_preply_smoke(
                 pass  # optional modal — smoke still OK if payments visible
 
         step("COMPLETED", SUCCESS_BOUND)
-        return {"code": SUCCESS_BOUND, "reason": "Payment page smoke OK (no card submit)"}
+        return _ret(page, SUCCESS_BOUND, "Payment page smoke OK (no card submit)")
 
     except Exception as e:
         msg = str(e)
         if "net::" in msg:
-            return {"code": ERROR_NETWORK, "reason": msg[:200]}
-        return {"code": ERROR_BROWSER, "reason": msg[:200]}
+            return _ret(page, ERROR_NETWORK, msg[:200])
+        return _ret(page, ERROR_BROWSER, msg[:200])
 
 
 def detect_preply_from_html(html: str, url: str = "") -> dict[str, Any]:

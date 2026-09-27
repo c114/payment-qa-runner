@@ -160,6 +160,10 @@ fi
 set_env_kv PLAYWRIGHT_MOCK "0" .env
 set_env_kv LIVE_TESTING_ENABLED "true" .env
 set_env_kv APP_VERSION "2.0.0" .env
+set_env_kv DATABASE_URL "sqlite:////data/payment_qa.db" .env
+# Strip any 1.x postgres leftovers
+sed -i.bak -e "/^POSTGRES_/d" -e "/^QA_PASSWORD=/d" -e "/5432/d" .env 2>/dev/null || true
+rm -f .env.bak 2>/dev/null || true
 set_env_kv CORS_ORIGINS "http://localhost:3000,http://127.0.0.1:3000" .env
 # Remove any baked NEXT_PUBLIC_API_URL so browser uses same-origin /api
 if grep -q '^NEXT_PUBLIC_API_URL=' .env 2>/dev/null; then
@@ -223,11 +227,11 @@ echo
 echo "Install Directory:"
 echo "$ROOT"
 echo
-echo "Admin URL (Same-Origin API via /api):"
+echo "Web UI (primary — Same-Origin API via /api):"
 echo "http://${SERVER_IP}:3000"
 echo
-echo "API (debug / health scripts):"
-echo "http://${SERVER_IP}:8000"
+echo "Local API (scripts / health only — bound to 127.0.0.1, not public):"
+echo "http://127.0.0.1:8000"
 echo
 echo "Admin Email:"
 echo "${ADMIN_EMAIL}"
@@ -239,7 +243,9 @@ if [[ -n "$CREATED_ADMIN_PW" ]]; then
   echo
 fi
 echo "Backend Health: $HEALTH"
-echo "Mode: LIVE"
+HEALTH_JSON=$(curl -sf http://127.0.0.1:8000/api/health 2>/dev/null || echo "{}")
+echo "Health JSON: $HEALTH_JSON"
+echo "Mode: LIVE (expect version=2.0.0)"
 echo "Frontend Health: $FRONT_HEALTH"
 echo
 echo "Status:"

@@ -37,6 +37,9 @@ FastAPI, Next.js, Playwright, Docker Compose, install/update script framework, S
 
 `admins`, `accounts`, `test_data`, `tasks`, `network_profiles`, `sessions`, `runs`, `run_items`, `artifacts`, `settings`
 
+`tasks.adapter_type`: `preply_ui` | `standard_sandbox_binding` — Worker routes by adapter (not URL guessing). URL only works if page structure matches Adapter; different structure needs a new Adapter. No Workflow/Selector UI.
+`run_items.final_url`: last page URL after execution.
+
 ## 7. API (minimum)
 
 - Auth: login, me

@@ -40,7 +40,7 @@ cd /opt/payment-qa-runner && sudo bash update.sh
 ```
 
 面板：`http://SERVER_IP:3000`（Same-Origin：`/api/*` 由 Next 代理到 backend）  
-调试 API：`http://SERVER_IP:8000/api/health`
+本地调试 API（仅本机）：`http://127.0.0.1:8000/api/health`（Web UI：`http://SERVER_IP:3000`）
 
 ---
 
@@ -48,8 +48,8 @@ cd /opt/payment-qa-runner && sudo bash update.sh
 
 | 任务 | 环境 | 说明 |
 |------|------|------|
-| **Preply Payment Page Smoke** | Production | 登录 + Payment methods + Add card **检测**。**禁止**真实填卡/提交 |
-| **Local Sandbox Card Binding** | Sandbox | 对 Docker `sandbox:8080` 完整 Login→Fill→Submit→Parse |
+| **Preply Payment Page Smoke** | Production / `preply_ui` | 登录 + Payment methods + Add card **检测**。**禁止**真实填卡/提交 |
+| **Local Sandbox Card Binding** | Sandbox / `standard_sandbox_binding` | 对 Docker `sandbox:8080` 完整 Login→Fill→Submit→Parse |
 
 ---
 

@@ -147,7 +147,9 @@ def _task_out(t: Task) -> TaskOut:
     return TaskOut(
         id=t.id, key=t.key, name=t.name, description=t.description, env_type=t.env_type,
         base_url=t.base_url, login_url=t.login_url, target_url=t.target_url,
-        allow_card_fill=t.allow_card_fill, task_type=t.task_type, enabled=t.enabled,
+        allow_card_fill=t.allow_card_fill, task_type=t.task_type,
+        adapter_type=getattr(t, "adapter_type", None) or "standard_sandbox_binding",
+        enabled=t.enabled,
         is_builtin=t.is_builtin, config=t.config or {}, last_url_test_status=t.last_url_test_status,
         last_url_test_at=t.last_url_test_at, created_at=t.created_at, updated_at=t.updated_at,
         field_help=task_field_help(),
@@ -446,6 +448,9 @@ def create_task(body: TaskCreate, admin: Admin = Depends(get_current_admin), db:
     key = body.key or _slug(body.name)
     if db.query(Task).filter(Task.key == key).first():
         key = f"{key}-{int(time.time()) % 10000}"
+    adapter = body.adapter_type if body.adapter_type in ("preply_ui", "standard_sandbox_binding") else (
+        "preply_ui" if body.env_type == "Production" else "standard_sandbox_binding"
+    )
     t = Task(
         key=key, name=body.name, description=body.description, env_type=body.env_type,
         base_url=body.base_url.rstrip("/"), login_url=body.login_url or "",
@@ -453,12 +458,15 @@ def create_task(body: TaskCreate, admin: Admin = Depends(get_current_admin), db:
         task_type=body.task_type if body.task_type in ("smoke", "card_bind") else (
             "card_bind" if _allow_card(body.env_type) else "smoke"
         ),
+        adapter_type=adapter,
         enabled=body.enabled, is_builtin=False, config=body.config or {},
     )
-    # Safety: Production never allow card fill
+    # Safety: Production never allow card fill; force preply_ui when Production
     if t.env_type == "Production":
         t.allow_card_fill = False
         t.task_type = "smoke"
+        if t.adapter_type == "standard_sandbox_binding" and not body.adapter_type:
+            t.adapter_type = "preply_ui"
     db.add(t)
     db.commit()
     db.refresh(t)
@@ -475,6 +483,8 @@ def update_task(task_id: int, body: TaskUpdate, admin: Admin = Depends(get_curre
         if k == "base_url" and v:
             v = v.rstrip("/")
         setattr(t, k, v)
+    if "adapter_type" in data and data["adapter_type"] not in ("preply_ui", "standard_sandbox_binding", None):
+        raise HTTPException(400, "adapter_type 必须是 preply_ui 或 standard_sandbox_binding")
     if "env_type" in data:
         t.allow_card_fill = _allow_card(t.env_type)
         if t.env_type == "Production":
@@ -597,10 +607,37 @@ def test_network(nid: int, admin: Admin = Depends(get_current_admin), db: Sessio
 
 
 # ── Runs ──────────────────────────────────────────────────────────────────────
+def _item_out(i: RunItem, db: Session | None = None) -> RunItemOut:
+    shot_id = None
+    trace_id = None
+    if db is not None:
+        arts = db.query(Artifact).filter(Artifact.run_item_id == i.id).all()
+        for a in arts:
+            if a.kind == "screenshot" and shot_id is None:
+                shot_id = a.id
+            elif a.kind == "trace" and trace_id is None:
+                trace_id = a.id
+    steps = i.steps or []
+    log_excerpt = None
+    if steps:
+        log_excerpt = " → ".join(
+            f"{s.get('state', '')}:{s.get('msg', '')}"[:60] for s in steps[-6:]
+        )
+    return RunItemOut(
+        id=i.id, run_id=i.run_id, account_id=i.account_id, account_email=i.account_email,
+        test_data_id=i.test_data_id, test_data_masked=i.test_data_masked,
+        status=i.status, result_code=i.result_code, reason=i.reason,
+        final_url=getattr(i, "final_url", None), state=i.state, steps=steps,
+        duration_ms=i.duration_ms or 0, started_at=i.started_at, finished_at=i.finished_at,
+        created_at=i.created_at, screenshot_id=shot_id, trace_id=trace_id,
+        log_excerpt=log_excerpt,
+    )
+
+
 def _run_out(r: Run, include_items: bool = False, db: Session | None = None) -> RunOut:
     items = None
     if include_items and db is not None:
-        items = [RunItemOut.model_validate(i) for i in db.query(RunItem).filter(RunItem.run_id == r.id).order_by(RunItem.id).all()]
+        items = [_item_out(i, db) for i in db.query(RunItem).filter(RunItem.run_id == r.id).order_by(RunItem.id).all()]
     return RunOut(
         id=r.id, task_id=r.task_id, task_snapshot=r.task_snapshot or {},
         network_id=r.network_id, network_snapshot=r.network_snapshot or {},
@@ -665,6 +702,7 @@ def create_run(body: RunCreate, admin: Admin = Depends(get_current_admin), db: S
             "id": task.id, "key": task.key, "name": task.name, "env_type": task.env_type,
             "base_url": task.base_url, "login_url": task.login_url, "target_url": task.target_url,
             "allow_card_fill": task.allow_card_fill, "task_type": task.task_type,
+            "adapter_type": getattr(task, "adapter_type", None) or "standard_sandbox_binding",
             "config": task.config or {},
         },
         network_id=network.id,
@@ -745,14 +783,27 @@ def delete_run(run_id: int, admin: Admin = Depends(get_current_admin), db: Sessi
         raise HTTPException(404)
     if r.status in ("QUEUED", "RUNNING", "STOPPING"):
         raise HTTPException(400, "请先停止运行再删除")
-    for a in db.query(Artifact).filter(Artifact.run_id == run_id).all():
+    # Order: artifact files → artifact rows → run_items → run (accounts kept)
+    items = db.query(RunItem).filter(RunItem.run_id == run_id).all()
+    item_ids = [i.id for i in items]
+    arts = db.query(Artifact).filter(Artifact.run_id == run_id).all()
+    if item_ids:
+        arts += db.query(Artifact).filter(Artifact.run_item_id.in_(item_ids), Artifact.run_id != run_id).all()
+    seen = set()
+    for a in arts:
+        if a.id in seen:
+            continue
+        seen.add(a.id)
         if a.path and os.path.isfile(a.path):
             try:
                 os.remove(a.path)
             except OSError:
                 pass
         db.delete(a)
-    db.query(RunItem).filter(RunItem.run_id == run_id).delete()
+    db.flush()
+    for it in items:
+        db.delete(it)
+    db.flush()
     db.delete(r)
     db.commit()
     return {"ok": True}
@@ -777,7 +828,7 @@ def list_results(
             (RunItem.account_email.contains(q)) | (RunItem.reason.contains(q)) | (RunItem.result_code.contains(q))
         )
     items = query.order_by(RunItem.id.desc()).limit(500).all()
-    return [RunItemOut.model_validate(i) for i in items]
+    return [_item_out(i, db) for i in items]
 
 
 @router.get("/results/export")
@@ -819,7 +870,11 @@ def delete_results(body: IdsRequest, admin: Admin = Depends(get_current_admin), 
             except OSError:
                 pass
         db.delete(a)
-    n = db.query(RunItem).filter(RunItem.id.in_(body.ids)).delete(synchronize_session=False)
+    db.flush()
+    n = 0
+    for it in db.query(RunItem).filter(RunItem.id.in_(body.ids)).all():
+        db.delete(it)
+        n += 1
     db.commit()
     return {"deleted": n}
 

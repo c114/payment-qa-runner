@@ -101,7 +101,13 @@ def finish_item(db: Session, run: Run, item: RunItem, account: Optional[Account]
     else:
         item.status = "ERROR"
         run.error_count = (run.error_count or 0) + 1
-    item.state = "COMPLETED" if b == "SUCCESS" else ("CANCELLED" if code == "CANCELLED" else "ERROR")
+    # Business FAIL → status=FAIL state=COMPLETED; technical → ERROR/ERROR; CANCELLED both; SUCCESS → SUCCESS/COMPLETED
+    if code == "CANCELLED" or b == "CANCELLED":
+        item.state = "CANCELLED"
+    elif b in ("SUCCESS", "FAIL"):
+        item.state = "COMPLETED"
+    else:
+        item.state = "ERROR"
     run.progress_done = (run.progress_done or 0) + 1
     if account:
         account.last_result = code
@@ -139,11 +145,18 @@ def process_item(db: Session, run: Run, item: RunItem, browser) -> None:
 
     password = decrypt_secret(account.password_enc)
     task = run.task_snapshot or {}
+    adapter_type = (task.get("adapter_type") or "").strip()
     allow_fill = bool(task.get("allow_card_fill"))
     env_type = task.get("env_type") or ""
     # HARD safety: Production never fill
     if env_type == "Production":
         allow_fill = False
+    # Route by adapter_type (not URL guessing). preply_ui = UI smoke only.
+    if adapter_type == "preply_ui":
+        allow_fill = False
+    elif adapter_type == "standard_sandbox_binding":
+        allow_fill = True and env_type != "Production"
+    # unknown/missing adapter_type: fall back to allow_card_fill + env_type gates above
 
     pan = expiry = cvc = ""
     if allow_fill:
@@ -230,6 +243,11 @@ def process_item(db: Session, run: Run, item: RunItem, browser) -> None:
             except Exception:
                 pass
 
+        item.final_url = (result.get("final_url") or "")[:1024] or None
+        try:
+            item.final_url = item.final_url or (page.url[:1024] if page else None)
+        except Exception:
+            pass
         finish_item(db, run, item, account, code, result.get("reason") or "", steps, t0)
 
     except Exception as e:

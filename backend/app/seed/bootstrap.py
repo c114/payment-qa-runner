@@ -25,6 +25,12 @@ TASK_FIELD_HELP = {
     "login_url": {"用途": "登录页（可空，由跳转检测）", "格式": "https://…", "示例": "https://preply.com/login", "必填": False},
     "target_url": {"用途": "支付/目标页", "格式": "https://…", "示例": "https://preply.com/en/settings/payments", "必填": True},
     "task_type": {"用途": "smoke=仅导航验证；card_bind=完整填卡", "格式": "smoke|card_bind", "示例": "card_bind", "必填": True},
+    "adapter_type": {
+        "用途": "页面适配器。URL 仅在页面结构匹配该 Adapter 时有效；结构不同需新 Adapter。无 Workflow/Selector 配置。",
+        "格式": "preply_ui|standard_sandbox_binding",
+        "示例": "standard_sandbox_binding",
+        "必填": True,
+    },
 }
 
 
@@ -65,6 +71,7 @@ def seed_all(db: Session) -> None:
             target_url="https://preply.com/en/settings/payments",
             allow_card_fill=False,
             task_type="smoke",
+            adapter_type="preply_ui",
             enabled=True,
             is_builtin=True,
             config={"open_add_card_modal": True},
@@ -84,11 +91,20 @@ def seed_all(db: Session) -> None:
             target_url=f"{sandbox_base}/settings/payments",
             allow_card_fill=True,
             task_type="card_bind",
+            adapter_type="standard_sandbox_binding",
             enabled=True,
             is_builtin=True,
             config={"sandbox": True},
         ))
         logger.info("Seeded Local Sandbox task")
+
+    # Backfill adapter_type on known builtins (idempotent)
+    preply = db.query(Task).filter(Task.key == "preply-payment-smoke").first()
+    if preply:
+        preply.adapter_type = "preply_ui"
+    sand = db.query(Task).filter(Task.key == "local-sandbox-bind").first()
+    if sand:
+        sand.adapter_type = "standard_sandbox_binding"
 
     if not db.query(Setting).filter(Setting.key == "app").first():
         db.add(Setting(key="app", value={

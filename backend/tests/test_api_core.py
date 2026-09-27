@@ -21,8 +21,10 @@ def test_seeded_tasks_and_direct_network(client, auth_headers):
     preply = next(t for t in tasks if t["key"] == "preply-payment-smoke")
     assert preply["env_type"] == "Production"
     assert preply["allow_card_fill"] is False
+    assert preply["adapter_type"] == "preply_ui"
     sand = next(t for t in tasks if t["key"] == "local-sandbox-bind")
     assert sand["allow_card_fill"] is True
+    assert sand["adapter_type"] == "standard_sandbox_binding"
 
     nets = client.get("/api/networks", headers=auth_headers).json()
     assert any(n["name"] == "Direct" and n["protocol"] == "direct" for n in nets)

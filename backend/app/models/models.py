@@ -76,6 +76,8 @@ class Task(Base):
     allow_card_fill: Mapped[bool] = mapped_column(Boolean, default=False)
     # smoke | card_bind
     task_type: Mapped[str] = mapped_column(String(32), default="smoke")
+    # preply_ui | standard_sandbox_binding — worker routes by this
+    adapter_type: Mapped[str] = mapped_column(String(64), default="standard_sandbox_binding")
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     is_builtin: Mapped[bool] = mapped_column(Boolean, default=False)
     config: Mapped[dict] = mapped_column(JSON, default=dict)
@@ -153,6 +155,7 @@ class RunItem(Base):
     status: Mapped[str] = mapped_column(String(16), default="WAITING", index=True)
     result_code: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    final_url: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
     state: Mapped[str] = mapped_column(String(64), default="QUEUED")  # state machine step
     steps: Mapped[list] = mapped_column(JSON, default=list)
     duration_ms: Mapped[float] = mapped_column(Float, default=0)

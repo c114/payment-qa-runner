@@ -76,6 +76,7 @@ def test_sandbox_bind_outcomes(sandbox_url):
         for pan, expected in cases:
             context = browser.new_context()
             page = context.new_page()
+            steps: list[str] = []
             result = run_sandbox_bind(
                 page,
                 base_url=base,
@@ -86,11 +87,17 @@ def test_sandbox_bind_outcomes(sandbox_url):
                 pan=pan,
                 expiry="12/30",
                 cvc="123",
+                on_step=lambda state, msg: steps.append(state),
             )
             context.close()
             assert result["code"] == expected, f"pan={pan} got={result}"
+            # Prove real Fill+Submit path (not open-modal-only)
+            assert "FILLING" in steps, f"pan={pan} missing FILLING in {steps}"
+            assert "SUBMITTING" in steps, f"pan={pan} missing SUBMITTING in {steps}"
+            assert result.get("final_url"), f"pan={pan} missing final_url"
         context = browser.new_context()
         page = context.new_page()
+        delay_steps: list[str] = []
         result = run_sandbox_bind(
             page,
             base_url=base,
@@ -101,9 +108,11 @@ def test_sandbox_bind_outcomes(sandbox_url):
             pan="4000000000009999",
             expiry="12/30",
             cvc="123",
+            on_step=lambda state, msg: delay_steps.append(state),
         )
         context.close()
-        assert result["code"] == SUCCESS_BOUND, result
+        assert result["code"] == SUCCESS_BOUND, result  # delayed redirect → BOUND
+        assert "FILLING" in delay_steps and "SUBMITTING" in delay_steps, delay_steps
         browser.close()
 
 

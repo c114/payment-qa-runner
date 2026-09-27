@@ -14,6 +14,15 @@ from app.services.result_codes import (
 StepCb = Callable[[str, str], None]  # state, message
 
 
+def _ret(page, code: str, reason: str) -> dict[str, Any]:
+    url = ""
+    try:
+        url = page.url or ""
+    except Exception:
+        pass
+    return {"code": code, "reason": reason, "final_url": url}
+
+
 def _safe_goto(page, url: str, timeout_ms: int = 20000) -> None:
     try:
         page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
@@ -76,15 +85,15 @@ def run_sandbox_bind(
     try:
         step("STARTING_BROWSER", "browser ready")
         if stopped():
-            return {"code": "CANCELLED", "reason": "stopped"}
+            return _ret(page, "CANCELLED", "stopped")
 
         step("NAVIGATING", f"goto {target_url}")
         try:
             _safe_goto(page, target_url)
         except Exception as e:
             if "net::" in str(e) or "TIMEOUT" in str(e).upper():
-                return {"code": ERROR_NETWORK, "reason": str(e)[:200]}
-            return {"code": ERROR_BROWSER, "reason": str(e)[:200]}
+                return _ret(page, ERROR_NETWORK, str(e)[:200])
+            return _ret(page, ERROR_BROWSER, str(e)[:200])
 
         step("WAITING_PAGE", "wait stable")
         _wait_stable(page, 12)
@@ -98,19 +107,19 @@ def run_sandbox_bind(
                 page.fill("input[type='password'], input[name='password'], [data-testid='password']", password, timeout=8000)
                 page.click("button[type='submit'], [data-testid='login-submit']", timeout=8000)
             except Exception as e:
-                return {"code": ERROR_LOGIN_TIMEOUT, "reason": f"login form: {e}"[:200]}
+                return _ret(page, ERROR_LOGIN_TIMEOUT, f"login form: {e}"[:200])
 
             _wait_stable(page, 12)
             if page.locator("[data-testid='login-error']").count() > 0:
-                return {"code": ERROR_BAD_CREDENTIALS, "reason": "Bad credentials"}
+                return _ret(page, ERROR_BAD_CREDENTIALS, "Bad credentials")
             if "/login" in page.url:
-                return {"code": ERROR_BAD_CREDENTIALS, "reason": "still on login"}
+                return _ret(page, ERROR_BAD_CREDENTIALS, "still on login")
             step("AUTH_SUCCESS", "authenticated")
         else:
             step("AUTH_SUCCESS", "already authenticated / session")
 
         if stopped():
-            return {"code": "CANCELLED", "reason": "stopped"}
+            return _ret(page, "CANCELLED", "stopped")
 
         # Ensure on payments
         step("TARGET_LOADING", "open payments")
@@ -133,7 +142,7 @@ def run_sandbox_bind(
             except Exception:
                 body = ""
             if "Payment methods" not in body and page.locator("[data-testid='payment-methods']").count() == 0:
-                return {"code": ERROR_TARGET, "reason": "Payment methods not found"}
+                return _ret(page, ERROR_TARGET, "Payment methods not found")
 
         step("TARGET_READY", "payment methods visible")
 
@@ -147,7 +156,7 @@ def run_sandbox_bind(
 
         step("FORM_OPEN", "add card form")
         if page.locator("[data-testid='card-number'], input[name='number'], input[autocomplete='cc-number']").count() == 0:
-            return {"code": ERROR_TARGET, "reason": "card form not found"}
+            return _ret(page, ERROR_TARGET, "card form not found")
 
         # FILL — required for success
         step("FILLING", "fill card fields")
@@ -184,32 +193,32 @@ def run_sandbox_bind(
                     body = page.inner_text("body")
                     code_text = body.split("\n")[0][:40].upper() if body else ""
                 except Exception:
-                    return {"code": ERROR_UNKNOWN, "reason": "context destroyed parsing"}
+                    return _ret(page, ERROR_UNKNOWN, "context destroyed parsing")
             else:
-                return {"code": ERROR_BROWSER, "reason": str(e)[:200]}
+                return _ret(page, ERROR_BROWSER, str(e)[:200])
 
         # 3DS detection
         if code_text == "3DS_REQUIRED" or page.locator("[data-testid='threeds'], iframe[src*='3ds']").count() > 0:
-            return {"code": FAIL_3DS, "reason": reason or "3DS challenge required"}
+            return _ret(page, FAIL_3DS, reason or "3DS challenge required")
 
         if code_text == "BOUND" or "Card saved" in (reason or "") or page.locator("[data-testid='success']").count() > 0:
             step("COMPLETED", SUCCESS_BOUND)
-            return {"code": SUCCESS_BOUND, "reason": reason or "Card bound"}
+            return _ret(page, SUCCESS_BOUND, reason or "Card bound")
 
         if code_text == "DECLINED" or "declined" in (reason or "").lower():
-            return {"code": FAIL_DECLINED, "reason": reason or "Declined"}
+            return _ret(page, FAIL_DECLINED, reason or "Declined")
 
         if code_text == "INVALID_DATA" or "invalid" in (reason or "").lower():
-            return {"code": FAIL_INVALID, "reason": reason or "Invalid data"}
+            return _ret(page, FAIL_INVALID, reason or "Invalid data")
 
         if code_text == "TIMEOUT":
-            return {"code": ERROR_NETWORK, "reason": reason or "Timeout"}
+            return _ret(page, ERROR_NETWORK, reason or "Timeout")
 
         # UNKNOWN — never SUCCESS
-        return {"code": ERROR_UNKNOWN, "reason": reason or f"Unrecognized: {code_text or body[:80]}"}
+        return _ret(page, ERROR_UNKNOWN, reason or f"Unrecognized: {code_text or body[:80]}")
 
     except Exception as e:
         msg = str(e)
         if "net::" in msg:
-            return {"code": ERROR_NETWORK, "reason": msg[:200]}
-        return {"code": ERROR_BROWSER, "reason": msg[:200]}
+            return _ret(page, ERROR_NETWORK, msg[:200])
+        return _ret(page, ERROR_BROWSER, msg[:200])

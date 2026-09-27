@@ -1,6 +1,7 @@
 # Payment Test Runner 2.0.0
 # Browser → frontend:3000/api/* (Same-Origin) → backend:8000
 # Services: frontend, backend, worker, sandbox
+# Backend API bound to 127.0.0.1 only (local scripts). Web UI on :3000.
 
 networks:
   pqa:
@@ -12,8 +13,11 @@ services:
     build:
       context: .
       dockerfile: sandbox/Dockerfile
+    # 127.0.0.1 for host debug; 172.17.0.1 for worker/backend via sandbox:host-gateway
+    # (this host's Docker bridge blocks container↔container TCP to sandbox)
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
+      - "172.17.0.1:8080:8080"
     networks:
       - pqa
     healthcheck:
@@ -46,7 +50,8 @@ services:
       - ./data:/data
       - ./docs:/app/docs:ro
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
+    # Host bridge may block container→container TCP to sandbox:8080; remap via published 127.0.0.1:8080
     extra_hosts:
       - "host.docker.internal:host-gateway"
       - "sandbox:host-gateway"
@@ -67,6 +72,7 @@ services:
       context: .
       dockerfile: worker/Dockerfile
     env_file: .env
+    # Same bridge workaround as backend — keep sandbox hostname, route via host-published 8080
     extra_hosts:
       - "host.docker.internal:host-gateway"
       - "sandbox:host-gateway"
@@ -110,8 +116,6 @@ services:
       BACKEND_URL: http://backend:8000
       HOSTNAME: "0.0.0.0"
       PORT: "3000"
-    extra_hosts:
-      - "backend:host-gateway"
     ports:
       - "3000:3000"
     networks:

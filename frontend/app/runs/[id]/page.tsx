@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { api, apiBlob } from "@/lib/api";
 import Link from "next/link";
@@ -9,6 +9,7 @@ export default function RunDetailPage() {
   const id = Number(params.id);
   const [run, setRun] = useState<any>(null);
   const [err, setErr] = useState("");
+  const [expanded, setExpanded] = useState<number | null>(null);
 
   const load = async () => {
     try { setRun(await api(`/runs/${id}`)); } catch (e: any) { setErr(e.message); }
@@ -18,6 +19,7 @@ export default function RunDetailPage() {
   if (!run) return <div>{err || "加载中…"}</div>;
 
   const live = ["QUEUED", "RUNNING", "STOPPING"].includes(run.status);
+  const artUrl = (aid: number) => `/api/artifacts/${aid}/content`;
 
   return (
     <div className="space-y-6 max-w-5xl">
@@ -25,7 +27,7 @@ export default function RunDetailPage() {
         <div>
           <h1 className="text-xl font-bold">Run #{run.id}</h1>
           <p className="text-sm text-surface-muted">
-            {run.task_snapshot?.name} · {run.task_snapshot?.target_url} · {run.network_snapshot?.name} · Mode {run.mode}
+            {run.task_snapshot?.name} · Adapter {run.task_snapshot?.adapter_type || "—"} · {run.task_snapshot?.target_url} · {run.network_snapshot?.name} · Mode {run.mode}
           </p>
           <p className="text-sm">Started: {run.started_at ? new Date(run.started_at).toLocaleString() : "—"}</p>
         </div>
@@ -73,21 +75,46 @@ export default function RunDetailPage() {
       </div>
 
       <div className="card overflow-x-auto">
-        <h2 className="font-semibold mb-2">结果</h2>
+        <h2 className="font-semibold mb-2">结果明细</h2>
         <table className="w-full text-sm">
           <thead><tr className="text-left text-surface-muted border-b border-surface-border">
-            <th className="py-2">Account</th><th>Test Data</th><th>Result</th><th>Code</th><th>Reason</th><th>State</th>
+            <th className="py-2">Run ID</th>
+            <th>Account</th>
+            <th>Step</th>
+            <th>Result</th>
+            <th>Code</th>
+            <th>Error / Reason</th>
+            <th>Final URL</th>
+            <th>Duration</th>
+            <th>Artifacts</th>
           </tr></thead>
           <tbody>
             {(run.items || []).map((it: any) => (
-              <tr key={it.id} className="border-b border-surface-border/50">
-                <td className="py-2">{it.account_email}</td>
-                <td className="font-mono text-xs">{it.test_data_masked || "—"}</td>
-                <td>{it.status}</td>
-                <td className="text-xs">{it.result_code || "—"}</td>
-                <td className="text-xs max-w-xs truncate">{it.reason || ""}</td>
-                <td className="text-xs">{it.state}</td>
-              </tr>
+              <Fragment key={it.id}>
+                <tr className="border-b border-surface-border/50 cursor-pointer" onClick={() => setExpanded(expanded === it.id ? null : it.id)}>
+                  <td className="py-2">#{it.run_id}</td>
+                  <td>{it.account_email}</td>
+                  <td className="text-xs">{it.state}</td>
+                  <td>{it.status}</td>
+                  <td className="text-xs">{it.result_code || "—"}</td>
+                  <td className="text-xs max-w-[12rem] truncate" title={it.reason || ""}>{it.reason || "—"}</td>
+                  <td className="text-xs max-w-[10rem] truncate" title={it.final_url || ""}>{it.final_url || "—"}</td>
+                  <td className="text-xs">{it.duration_ms ? `${Math.round(it.duration_ms)}ms` : "—"}</td>
+                  <td className="text-xs space-x-2" onClick={(e) => e.stopPropagation()}>
+                    {it.screenshot_id ? <a className="text-accent underline" href={artUrl(it.screenshot_id)} target="_blank" rel="noreferrer">Screenshot</a> : <span className="text-surface-muted">Shot—</span>}
+                    {it.trace_id ? <a className="text-accent underline" href={artUrl(it.trace_id)} target="_blank" rel="noreferrer">Trace</a> : <span className="text-surface-muted">Trace—</span>}
+                    <button className="underline text-accent" onClick={() => setExpanded(expanded === it.id ? null : it.id)}>Log</button>
+                  </td>
+                </tr>
+                {expanded === it.id && (
+                  <tr>
+                    <td colSpan={9} className="bg-black/20 p-3 text-xs">
+                      <div className="font-semibold mb-1">Steps / Log</div>
+                      <pre className="whitespace-pre-wrap">{(it.steps || []).map((s: any) => `${s.ts || ""} [${s.state}] ${s.msg}`).join("\n") || it.log_excerpt || "—"}</pre>
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
             ))}
           </tbody>
         </table>

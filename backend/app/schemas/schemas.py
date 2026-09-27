@@ -116,6 +116,7 @@ class TaskCreate(BaseModel):
     login_url: str = ""
     target_url: str = Field(..., min_length=1)
     task_type: str = "smoke"  # smoke|card_bind
+    adapter_type: str = "standard_sandbox_binding"  # preply_ui|standard_sandbox_binding
     enabled: bool = True
     key: Optional[str] = None
     config: dict = Field(default_factory=dict)
@@ -129,6 +130,7 @@ class TaskUpdate(BaseModel):
     login_url: Optional[str] = None
     target_url: Optional[str] = None
     task_type: Optional[str] = None
+    adapter_type: Optional[str] = None
     enabled: Optional[bool] = None
     config: Optional[dict] = None
 
@@ -144,6 +146,7 @@ class TaskOut(BaseModel):
     target_url: str
     allow_card_fill: bool
     task_type: str
+    adapter_type: str = "standard_sandbox_binding"
     enabled: bool
     is_builtin: bool
     config: dict = Field(default_factory=dict)
@@ -213,12 +216,16 @@ class RunItemOut(BaseModel):
     status: str
     result_code: Optional[str] = None
     reason: Optional[str] = None
+    final_url: Optional[str] = None
     state: str
     steps: list = Field(default_factory=list)
     duration_ms: float = 0
     started_at: Optional[datetime] = None
     finished_at: Optional[datetime] = None
     created_at: datetime
+    screenshot_id: Optional[int] = None
+    trace_id: Optional[int] = None
+    log_excerpt: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
