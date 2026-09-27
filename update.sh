@@ -3,7 +3,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
 
-echo "==> Update Payment QA Runner 1.3.1"
+echo "==> Update Payment Test Runner 2.0.0"
 
 BACKUP_OUT=""
 if BACKUP_OUT=$(./backup.sh | tee /dev/stderr | awk '/Backup written:/{print $3; exit}'); then
@@ -56,6 +56,7 @@ fi
 # Ensure PLAYWRIGHT_MOCK default stays 0 if unset; never wipe .env secrets
 if [[ -f .env ]] && ! grep -q '^PLAYWRIGHT_MOCK=' .env; then
   echo "PLAYWRIGHT_MOCK=0" >> .env
+if [[ -f .env ]] && ! grep -q "^LIVE_TESTING_ENABLED=" .env; then echo "LIVE_TESTING_ENABLED=true" >> .env; fi
 fi
 mkdir -p data/sessions
 chmod 700 data/sessions 2>/dev/null || true

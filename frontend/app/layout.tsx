@@ -3,8 +3,8 @@ import "./globals.css";
 import AppShell from "@/components/Shell";
 
 export const metadata: Metadata = {
-  title: "Payment QA Runner",
-  description: "Sandbox payment automation QA tool",
+  title: "Payment Test Runner 2.0.0",
+  description: "Import accounts → select task → START → real Chromium",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

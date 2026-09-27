@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Payment QA Runner — one-click installer (Ubuntu 22.04/24.04, Debian 12/13)
+# Payment Test Runner — one-click installer (Ubuntu 22.04/24.04, Debian 12/13)
 # Public: curl -fsSL https://raw.githubusercontent.com/c114/payment-qa-runner/main/install.sh | sudo bash
 set -euo pipefail
 
 REPO_SLUG="c114/payment-qa-runner"
 INSTALL_DIR="${INSTALL_DIR:-/opt/payment-qa-runner}"
-VERSION="1.3.1"
+VERSION="2.0.0"
 
 need_root() {
   if [[ "${EUID}" -ne 0 ]]; then
@@ -78,7 +78,7 @@ detect_server_ip() {
 need_root
 
 ARCH=$(detect_arch)
-echo "==> Payment QA Runner ${VERSION} installer (arch=${ARCH})"
+echo "==> Payment Test Runner ${VERSION} installer (arch=${ARCH})"
 
 . /etc/os-release 2>/dev/null || true
 echo "==> Distro: ${ID:-unknown} ${VERSION_ID:-}"
@@ -158,7 +158,8 @@ fi
 
 # Safe defaults — Same-Origin: no NEXT_PUBLIC_API_URL / public CORS IP required
 set_env_kv PLAYWRIGHT_MOCK "0" .env
-set_env_kv LIVE_TESTING_ENABLED "false" .env
+set_env_kv LIVE_TESTING_ENABLED "true" .env
+set_env_kv APP_VERSION "2.0.0" .env
 set_env_kv CORS_ORIGINS "http://localhost:3000,http://127.0.0.1:3000" .env
 # Remove any baked NEXT_PUBLIC_API_URL so browser uses same-origin /api
 if grep -q '^NEXT_PUBLIC_API_URL=' .env 2>/dev/null; then
@@ -210,7 +211,7 @@ REPO_URL="https://github.com/${REPO_SLUG}"
 
 echo
 echo "========================================"
-echo "Payment QA Runner Installed Successfully"
+echo "Payment Test Runner Installed Successfully"
 echo "========================================"
 echo
 echo "Repository:"
@@ -238,6 +239,7 @@ if [[ -n "$CREATED_ADMIN_PW" ]]; then
   echo
 fi
 echo "Backend Health: $HEALTH"
+echo "Mode: LIVE"
 echo "Frontend Health: $FRONT_HEALTH"
 echo
 echo "Status:"

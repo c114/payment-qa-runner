@@ -19,3 +19,7 @@ button.btn-danger { @apply btn bg-accent-bad hover:bg-red-600; }
 table.data { @apply w-full text-sm; }
 table.data th { @apply text-left text-surface-muted font-medium py-2 border-b border-surface-border; }
 table.data td { @apply py-2 border-b border-surface-border/50; }
+
+.input {
+  @apply w-full bg-surface-card border border-surface-border rounded-md px-3 py-2 text-sm text-slate-100 outline-none focus:border-accent;
+}

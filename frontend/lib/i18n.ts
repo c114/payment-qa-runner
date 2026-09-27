@@ -1,117 +1,35 @@
 export type Locale = "zh" | "en";
 
-const dict = {
-  zh: {
-    appName: "Payment QA Runner",
-    login: "登录",
-    logout: "退出",
-    startTest: "开始测试",
-    results: "结果",
-    reports: "报告",
-    logs: "日志",
-    help: "帮助",
-    advanced: "高级设置",
-    dashboard: "仪表盘",
-    testRuns: "测试运行",
-    testCases: "测试用例",
-    txtImport: "TXT 导入",
-    accounts: "QA 账号",
-    proxies: "SOCKS5",
-    sessions: "浏览器会话",
-    environments: "环境",
-    pageMapping: "页面映射",
-    screenshots: "截图",
-    settings: "系统设置",
-    dataManagement: "数据管理",
-    start: "开始",
-    pause: "暂停",
-    resume: "继续",
-    stop: "停止",
-    save: "保存",
-    create: "创建",
-    delete: "删除",
-    test: "测试",
-    helpBtn: "帮助",
-    success: "成功",
-    fail: "失败",
-    error: "异常",
-    mockBanner: "当前为 MOCK 模式 — 结果不是真实浏览器 PASS",
-    importAccounts: "导入测试账号",
-    selectTask: "选择任务",
-    network: "网络",
-    direct: "直连",
-  },
-  en: {
-    appName: "Payment QA Runner",
-    login: "Login",
-    logout: "Logout",
-    startTest: "Start Test",
-    results: "Results",
-    reports: "Reports",
-    logs: "Logs",
-    help: "Help",
-    advanced: "Advanced",
-    dashboard: "Dashboard",
-    testRuns: "Test Runs",
-    testCases: "Test Cases",
-    txtImport: "TXT Import",
-    accounts: "QA Accounts",
-    proxies: "SOCKS5",
-    sessions: "Browser Sessions",
-    environments: "Environments",
-    pageMapping: "Page Mapping",
-    screenshots: "Screenshots",
-    settings: "System Settings",
-    dataManagement: "Data Management",
-    start: "START",
-    pause: "PAUSE",
-    resume: "RESUME",
-    stop: "STOP",
-    save: "Save",
-    create: "Create",
-    delete: "Delete",
-    test: "Test",
-    helpBtn: "Help",
-    success: "Success",
-    fail: "Fail",
-    error: "Error",
-    mockBanner: "MOCK MODE — results are not live Chromium PASS",
-    importAccounts: "Import accounts",
-    selectTask: "Select task",
-    network: "Network",
-    direct: "Direct",
-  },
-} as const;
+const dict: Record<string, { zh: string; en: string }> = {
+  appName: { zh: "Payment Test Runner", en: "Payment Test Runner" },
+  home: { zh: "首页", en: "Home" },
+  accounts: { zh: "账号", en: "Accounts" },
+  testData: { zh: "测试数据", en: "Test Data" },
+  runs: { zh: "运行记录", en: "Runs" },
+  tasks: { zh: "任务", en: "Tasks" },
+  settings: { zh: "设置", en: "Settings" },
+  logout: { zh: "退出", en: "Logout" },
+  helpBtn: { zh: "帮助", en: "Help" },
+  help: { zh: "帮助", en: "Help" },
+  start: { zh: "开始 START", en: "START" },
+  stop: { zh: "停止 STOP", en: "STOP" },
+  importAccounts: { zh: "导入账号", en: "Import Accounts" },
+  selectAccounts: { zh: "选择账号", en: "Select Accounts" },
+  importTestData: { zh: "导入测试数据", en: "Import Test Data" },
+  liveBanner: { zh: "LIVE MODE — 真实 Chromium，无 Mock 回退", en: "LIVE MODE — real Chromium, no Mock fallback" },
+};
 
-export type DictKey = keyof typeof dict.zh;
-
-export function t(locale: Locale, key: DictKey): string {
-  return dict[locale][key] || dict.zh[key];
+export function t(locale: Locale, key: string): string {
+  const row = dict[key];
+  if (!row) return key;
+  return row[locale] || row.zh || key;
 }
 
-/** Normal user menu */
-export const mainNavItems: { href: string; key: DictKey }[] = [
-  { href: "/", key: "startTest" },
-  { href: "/results", key: "results" },
-  { href: "/reports", key: "reports" },
-  { href: "/logs", key: "logs" },
-  { href: "/help", key: "help" },
-];
-
-/** Advanced settings (tech fields) */
-export const advancedNavItems: { href: string; key: DictKey }[] = [
+export const mainNavItems = [
+  { href: "/", key: "home" },
   { href: "/accounts", key: "accounts" },
-  { href: "/proxies", key: "proxies" },
-  { href: "/environments", key: "environments" },
-  { href: "/page-mapping", key: "pageMapping" },
-  { href: "/sessions", key: "sessions" },
-  { href: "/cases", key: "testCases" },
-  { href: "/runs", key: "testRuns" },
-  { href: "/import", key: "txtImport" },
-  { href: "/screenshots", key: "screenshots" },
+  { href: "/test-data", key: "testData" },
+  { href: "/runs", key: "runs" },
+  { href: "/tasks", key: "tasks" },
   { href: "/settings", key: "settings" },
-  { href: "/data-management", key: "dataManagement" },
 ];
-
-/** @deprecated use mainNavItems + advancedNavItems */
-export const navItems = [...mainNavItems, ...advancedNavItems];
