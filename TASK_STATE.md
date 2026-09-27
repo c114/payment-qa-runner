@@ -31,4 +31,4 @@
 Operate: `sudo bash install.sh` / open `http://SERVER:3000`
 
 ## Last Stable Commit
-(see git log after push)
+`f444cef` — fix(2.0.0): finish_item FAIL→COMPLETED, adapter_type, compose binds
