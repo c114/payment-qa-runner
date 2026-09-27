@@ -12,6 +12,8 @@ services:
     build:
       context: .
       dockerfile: sandbox/Dockerfile
+    ports:
+      - "8080:8080"
     networks:
       - pqa
     healthcheck:
@@ -35,6 +37,7 @@ services:
       TRACE_DIR: /data/traces
       WORKER_HEARTBEAT_FILE: /data/logs/worker.heartbeat
       SANDBOX_BASE_URL: http://sandbox:8080
+      PROXY_TEST_URL: http://sandbox:8080/health
       APP_VERSION: "2.0.0"
       PLAYWRIGHT_MOCK: "0"
       LIVE_TESTING_ENABLED: "true"
@@ -44,6 +47,9 @@ services:
       - ./docs:/app/docs:ro
     ports:
       - "8000:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+      - "sandbox:host-gateway"
     networks:
       - pqa
     depends_on:
@@ -61,6 +67,9 @@ services:
       context: .
       dockerfile: worker/Dockerfile
     env_file: .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+      - "sandbox:host-gateway"
     environment:
       DATABASE_URL: ${DATABASE_URL:-sqlite:////data/payment_qa.db}
       SCREENSHOT_DIR: /data/screenshots
@@ -70,6 +79,7 @@ services:
       TRACE_DIR: /data/traces
       WORKER_HEARTBEAT_FILE: /data/logs/worker.heartbeat
       SANDBOX_BASE_URL: http://sandbox:8080
+      PROXY_TEST_URL: http://sandbox:8080/health
       APP_VERSION: "2.0.0"
       PLAYWRIGHT_MOCK: "0"
       LIVE_TESTING_ENABLED: "true"

@@ -12,18 +12,32 @@ from app.core.config import get_settings
 
 
 def probe_direct(timeout: float = 8.0) -> Tuple[bool, float, str]:
+    """Try configured URL, then sandbox health, then a public fallback."""
     settings = get_settings()
-    url = settings.proxy_test_url or "http://1.1.1.1/"
+    candidates = []
+    if settings.proxy_test_url:
+        candidates.append(settings.proxy_test_url)
+    sand = getattr(settings, "sandbox_base_url", None) or "http://sandbox:8080"
+    candidates.append(f"{sand.rstrip('/')}/health")
+    candidates.extend(["http://1.1.1.1/", "https://example.com/"])
+    seen = set()
+    last_err = ""
     t0 = time.monotonic()
-    try:
-        with httpx.Client(timeout=timeout, follow_redirects=True) as client:
-            r = client.get(url)
-            latency = (time.monotonic() - t0) * 1000
-            if r.status_code < 500:
-                return True, round(latency, 1), ""
-            return False, round(latency, 1), f"HTTP {r.status_code}"
-    except Exception as e:
-        return False, round((time.monotonic() - t0) * 1000, 1), str(e)[:200]
+    for url in candidates:
+        if url in seen:
+            continue
+        seen.add(url)
+        try:
+            with httpx.Client(timeout=timeout, follow_redirects=True) as client:
+                r = client.get(url)
+                latency = (time.monotonic() - t0) * 1000
+                if r.status_code < 500:
+                    return True, round(latency, 1), ""
+                last_err = f"HTTP {r.status_code} from {url}"
+        except Exception as e:
+            last_err = f"{url}: {e}"[:200]
+            continue
+    return False, round((time.monotonic() - t0) * 1000, 1), last_err or "all probe URLs failed"
 
 
 def probe_http_proxy(
@@ -91,7 +105,11 @@ def probe_profile(
 ) -> Tuple[bool, float, str]:
     proto = (protocol or "direct").lower()
     if proto == "direct":
-        return probe_direct()
+        ok, latency, err = probe_direct()
+        # Direct means no proxy — do not block START if egress probe fails (airgapped/VPS firewall).
+        if not ok:
+            return True, latency, f"Direct OK (egress probe skipped: {err})"
+        return True, latency, ""
     if not host or not port:
         return False, 0.0, "缺少 host/port"
     if proto == "http":
