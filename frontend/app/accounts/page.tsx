@@ -23,7 +23,12 @@ export default function AccountsPage() {
     <div className="space-y-4">
       <div className="card space-y-2">
         <h2 className="font-semibold">新增 QA 账号</h2>
-        <p className="help-field">密码加密存储；永不写入日志。导入格式: email|password · name|email|password · name|email|password|tag</p>
+        <p className="help-field">
+          <b>是什么</b>：QA 账号（邮箱/密码）。密码加密存储，永不写日志。<br/>
+          <b>是否必填</b>：创建时 email+password 必填；display name 可选。<br/>
+          <b>格式/示例</b>：<code>email@example.com|password</code> · <code>email@example.com----password</code> · <code>name|email|password</code> · <code>name|email|password|tag</code>。<br/>
+          <b>怎么操作</b>：单条填写点创建，或批量粘贴 → 解析预览 → 确认导入。
+        </p>
         <div className="flex flex-wrap gap-2">
           <input placeholder="name (可选)" value={name} onChange={(e) => setName(e.target.value)} />
           <input placeholder="email" value={email} onChange={(e) => setEmail(e.target.value)} />

@@ -22,6 +22,7 @@ const dict = {
     pageMapping: "页面映射",
     screenshots: "截图",
     settings: "系统设置",
+    dataManagement: "数据管理",
     start: "开始",
     pause: "暂停",
     resume: "继续",
@@ -61,6 +62,7 @@ const dict = {
     pageMapping: "Page Mapping",
     screenshots: "Screenshots",
     settings: "System Settings",
+    dataManagement: "Data Management",
     start: "START",
     pause: "PAUSE",
     resume: "RESUME",
@@ -108,6 +110,7 @@ export const advancedNavItems: { href: string; key: DictKey }[] = [
   { href: "/import", key: "txtImport" },
   { href: "/screenshots", key: "screenshots" },
   { href: "/settings", key: "settings" },
+  { href: "/data-management", key: "dataManagement" },
 ];
 
 /** @deprecated use mainNavItems + advancedNavItems */

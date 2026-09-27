@@ -27,6 +27,15 @@ export default function SettingsPage() {
 
   return (
     <div className="space-y-4">
+      <div className="card space-y-2 border-amber-500/40">
+        <h2 className="font-semibold">LIVE / MOCK 说明</h2>
+        <p className="help-field">
+          <b>是什么</b>：<code>PLAYWRIGHT_MOCK</code> 环境变量控制模式。顶部横幅与 <code>/api/health.mode</code> 必须一致。<br/>
+          <b>LIVE (MOCK=0)</b>：真实 Chromium，结果才算 live PASS；失败返回明确错误码，<b>不会</b>自动降级到 Mock。<br/>
+          <b>MOCK (MOCK=1)</b>：模拟结果，横幅显示 MOCK MODE — 不是真实浏览器 PASS。<br/>
+          <b>怎么操作</b>：改 .env 中 PLAYWRIGHT_MOCK 后重启 backend/worker；不要指望 Live 失败后自动变 Mock。
+        </p>
+      </div>
       <div className="card space-y-2">
         <h2 className="font-semibold">Runner 设置</h2>
         <p className="help-field">decline_retry 固定为 0（禁止因拒付轮换代理）。截图策略默认 FAIL,ERROR,3DS。</p>

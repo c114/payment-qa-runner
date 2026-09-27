@@ -42,7 +42,12 @@ export default function ProxiesPage() {
     <div className="space-y-4">
       <div className="card space-y-2">
         <h2 className="font-semibold">SOCKS5 池</h2>
-        <p className="help-field">禁止从互联网抓取代理。仅 NETWORK_ERROR / PROXY_DOWN / CONNECTION_TIMEOUT 可自动切换 Network Profile。CARD_DECLINED / 3DS 等禁止自动换代理。</p>
+        <p className="help-field">
+          <b>是什么</b>：SOCKS5 代理池条目（host/port/可选账号密码）。禁止从互联网抓取代理。<br/>
+          <b>是否必填</b>：host+port 必填；username/password/label 可选。<br/>
+          <b>格式/示例</b>：<code>host:port</code> · <code>host:port:user:pass</code> · <code>socks5://user:pass@host:port</code>。<br/>
+          <b>怎么操作</b>：单条添加或批量粘贴 → 解析预览 → 确认；Test All 探测。仅 NETWORK_ERROR/PROXY_DOWN/CONNECTION_TIMEOUT 可自动切 Network Profile。
+        </p>
         <div className="flex flex-wrap gap-2">
           <input placeholder="host" value={form.host} onChange={(e) => setForm({ ...form, host: e.target.value })} />
           <input type="number" placeholder="port" value={form.port} onChange={(e) => setForm({ ...form, port: Number(e.target.value) })} />
@@ -136,8 +141,14 @@ export default function ProxiesPage() {
         </div>
       )}
 
-      <div className="card">
-        <h2 className="font-semibold mb-2">Network Profiles</h2>
+      <div className="card space-y-2">
+        <h2 className="font-semibold">Network Profiles</h2>
+        <p className="help-field">
+          <b>是什么</b>：网络档案（直连 direct 或绑定某个 SOCKS5）。开始测试时可选用。<br/>
+          <b>是否必填</b>：可选；不选则默认直连。<br/>
+          <b>格式</b>：mode=<code>direct</code>|<code>proxy</code>；proxy 模式需关联 proxy_id。<br/>
+          <b>怎么操作</b>：在高级设置中查看默认档案；切换网络会新建 browser context，不热补丁代理。
+        </p>
         <ul className="text-sm space-y-1">
           {profiles.map((n) => <li key={n.id}>{n.name} — {n.mode}{n.is_default ? " (default)" : ""}</li>)}
         </ul>

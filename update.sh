@@ -3,7 +3,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
 
-echo "==> Update Payment QA Runner 1.3.0"
+echo "==> Update Payment QA Runner 1.3.1"
 
 BACKUP_OUT=""
 if BACKUP_OUT=$(./backup.sh | tee /dev/stderr | awk '/Backup written:/{print $3; exit}'); then

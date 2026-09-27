@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Payments Loading…</title>
+  <script>
+    // Simulate Preply white-screen mid-redirect (~1.5s) to login
+    setTimeout(function () {
+      var next = "/en/login?next=/en/settings/learner/payment-methods";
+      // Use hash/query on same file so file:// works: rewrite via location
+      var u = new URL(window.location.href);
+      u.searchParams.set("page", "login");
+      u.searchParams.set("next", "/en/settings/learner/payment-methods");
+      // Also mutate pathname-like query for url_is_login (/login in URL)
+      history.replaceState(null, "", u.toString().replace("page=login", "page=login") + "#/en/login");
+      document.title = "Log in";
+      document.body.innerHTML = `
+        <main>
+          <h1>Log in</h1>
+          <form id="login-form">
+            <label>Email <input id="email" type="email" name="email" placeholder="Email" /></label>
+            <label>Password <input id="password" type="password" name="password" placeholder="Password" /></label>
+            <button type="submit">Log in</button>
+          </form>
+        </main>`;
+    }, 1500);
+  </script>
+</head>
+<body>
+  <div style="padding:40px;color:#999">Loading payment methods…</div>
+</body>
+</html>

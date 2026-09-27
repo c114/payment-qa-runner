@@ -71,7 +71,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       <aside className="w-56 shrink-0 border-r border-surface-border bg-[#0c1017] p-3 flex flex-col">
         <div className="mb-4 px-2">
           <div className="text-sm font-bold tracking-wide text-accent">Payment QA</div>
-          <div className="text-xs text-surface-muted">Runner 1.3.0</div>
+          <div className="text-xs text-surface-muted">Runner 1.3.1</div>
         </div>
         <nav className="flex-1 space-y-0.5 overflow-y-auto">
           {mainNavItems.map((item) => (
@@ -119,9 +119,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </button>
       </aside>
       <main className="flex-1 flex flex-col min-w-0">
-        {mockMode && (
+        {mockMode ? (
           <div className="bg-amber-500 text-black text-center text-sm font-bold py-2 px-4 tracking-wide">
             ⚠ MOCK MODE — {t(locale, "mockBanner")}
+          </div>
+        ) : (
+          <div className="bg-emerald-700/80 text-white text-center text-xs py-1 px-4 tracking-wide">
+            LIVE MODE — health.mode=LIVE · Playwright 真实浏览器（非 Mock）
           </div>
         )}
         <header className="flex items-center justify-between border-b border-surface-border px-6 py-3">

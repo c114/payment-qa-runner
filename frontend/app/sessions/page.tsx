@@ -56,8 +56,10 @@ export default function SessionsPage() {
       <div className="card space-y-2">
         <h2 className="font-semibold">浏览器会话</h2>
         <p className="help-field">
-          STALE = Worker 重启或心跳超时，不会显示为 READY。switch_network = 新建 context，不热补丁代理。
-          PLAYWRIGHT_MOCK=1 时动作以 mock 方式排队。
+          <b>是什么</b>：长期浏览器会话（可 Open / Restart / Re-login / Switch Network）。<br/>
+          <b>是否必填</b>：普通一键冒烟可不建会话；高级排障时使用。<br/>
+          <b>状态说明</b>：STALE = Worker 重启或心跳超时，不会显示为 READY。<br/>
+          <b>怎么操作</b>：New Session → Open；switch_network = 新建 context，不热补丁代理。PLAYWRIGHT_MOCK=1 时动作以 mock 排队。
         </p>
         <div className="flex gap-2 flex-wrap">
           <input value={name} onChange={(e) => setName(e.target.value)} />

@@ -48,6 +48,42 @@ def _log(db: Session, level: str, source: str, message: str, meta: dict | None =
     db.commit()
 
 
+def serialize_run(run: TestRun) -> TestRunOut:
+    """Normalize legacy NULL columns before Pydantic validation."""
+    return TestRunOut.model_validate(
+        {
+            "id": run.id,
+            "name": run.name or "",
+            "environment_id": run.environment_id,
+            "account_id": run.account_id,
+            "network_profile_id": run.network_profile_id,
+            "proxy_pool_ids": run.proxy_pool_ids if run.proxy_pool_ids is not None else [],
+            "case_ids": run.case_ids if run.case_ids is not None else [],
+            "run_count": run.run_count or "1",
+            "status": run.status or "QUEUED",
+            "progress_done": run.progress_done or 0,
+            "progress_total": run.progress_total or 0,
+            "pass_count": run.pass_count or 0,
+            "fail_count": run.fail_count or 0,
+            "error_count": run.error_count or 0,
+            "current_case_id": run.current_case_id,
+            "task_preset_id": run.task_preset_id,
+            "account_ids": run.account_ids if run.account_ids is not None else [],
+            "current_account": run.current_account,
+            "current_step": run.current_step,
+            "run_mode": run.run_mode or "workflow",
+            "is_mock": bool(run.is_mock) if run.is_mock is not None else False,
+            "error_code": run.error_code,
+            "live_log": run.live_log if run.live_log is not None else [],
+            "started_at": run.started_at,
+            "finished_at": run.finished_at,
+            "created_at": run.created_at,
+        }
+    )
+
+
+
+
 # ── Auth ──────────────────────────────────────────────
 # In-memory login rate limit: 5 attempts / minute per IP+email
 _LOGIN_ATTEMPTS: dict[str, list[float]] = {}
@@ -151,7 +187,7 @@ def health(db: Session = Depends(get_db)):
         "mock": mock_flag,
         "mode": mode,
         "live_testing_enabled": bool(settings.live_testing_enabled),
-        "version": settings.app_version or "1.3.0",
+        "version": settings.app_version or "1.3.1",
         "time": now_iso,
     }
 
@@ -194,7 +230,7 @@ def dashboard_stats(db: Session = Depends(get_db), admin: AdminUser = Depends(ge
         "environments": envs,
         "cases": cases,
         "wizard": wizard,
-        "active_run": TestRunOut.model_validate(active_run).model_dump() if active_run else None,
+        "active_run": serialize_run(active_run).model_dump() if active_run else None,
     }
 
 
@@ -701,7 +737,8 @@ def import_cases(body: ImportMappingIn, db: Session = Depends(get_db), admin: Ad
 # ── Test Runs ─────────────────────────────────────────
 @router.get("/test-runs", response_model=List[TestRunOut])
 def list_runs(db: Session = Depends(get_db), admin: AdminUser = Depends(get_current_admin)):
-    return db.query(TestRun).order_by(TestRun.id.desc()).limit(100).all()
+    rows = db.query(TestRun).order_by(TestRun.id.desc()).limit(100).all()
+    return [serialize_run(r) for r in rows]
 
 
 @router.get("/test-runs/{rid}", response_model=TestRunOut)
@@ -709,7 +746,7 @@ def get_run(rid: int, db: Session = Depends(get_db), admin: AdminUser = Depends(
     r = db.get(TestRun, rid)
     if not r:
         raise HTTPException(404)
-    return r
+    return serialize_run(r)
 
 
 @router.post("/test-runs", response_model=TestRunOut)
@@ -781,7 +818,7 @@ def run_control(rid: int, action: str, db: Session = Depends(get_db), admin: Adm
     log.append({"ts": datetime.now(timezone.utc).isoformat(), "msg": f"Control: {action}"})
     run.live_log = log[-200:]
     db.commit()
-    return TestRunOut.model_validate(run)
+    return serialize_run(run)
 
 
 # ── Results ───────────────────────────────────────────
@@ -1498,20 +1535,192 @@ def mappings_import(body: ImportMappingIn, db: Session = Depends(get_db), admin:
 @router.get("/screenshots/download")
 def download_screenshot(path: str, db: Session = Depends(get_db), admin: AdminUser = Depends(get_current_admin)):
     settings = get_settings()
-    root = Path(settings.screenshot_dir).resolve()
+    roots = [Path(settings.screenshot_dir).resolve()]
     target = Path(path).resolve()
-    if not str(target).startswith(str(root)) or not target.exists():
-        # also allow relative name under screenshot dir
-        target = (root / Path(path).name).resolve()
-        if not str(target).startswith(str(root)) or not target.exists():
+    allowed = any(str(target).startswith(str(r)) for r in roots)
+    if not allowed or not target.exists():
+        target = (roots[0] / Path(path).name).resolve()
+        if not str(target).startswith(str(roots[0])) or not target.exists():
             raise HTTPException(404)
     from fastapi.responses import FileResponse
     return FileResponse(target, filename=target.name)
 
 
+@router.get("/artifacts/download")
+def download_artifact(path: str, db: Session = Depends(get_db), admin: AdminUser = Depends(get_current_admin)):
+    """Download screenshot PNG or Playwright trace zip under allowed data dirs."""
+    settings = get_settings()
+    roots = [
+        Path(settings.screenshot_dir).resolve(),
+        (Path(settings.log_dir) / "traces").resolve(),
+        Path(settings.log_dir).resolve(),
+        Path(settings.report_dir).resolve(),
+    ]
+    target = Path(path).resolve()
+    if not any(str(target).startswith(str(r)) for r in roots) or not target.is_file():
+        raise HTTPException(404, "artifact not found or outside allowed dirs")
+    from fastapi.responses import FileResponse
+    return FileResponse(target, filename=target.name)
+
+
+
+
+# ── Data Management (1.3.1) ───────────────────────────
+@router.get("/data-management/summary")
+def data_management_summary(db: Session = Depends(get_db), admin: AdminUser = Depends(get_current_admin)):
+    settings = get_settings()
+    shot_dir = Path(settings.screenshot_dir)
+    trace_dir = Path(settings.log_dir) / "traces"
+    session_dir = Path(settings.session_dir)
+
+    def _count_files(root: Path, pattern: str = "*") -> int:
+        if not root.exists():
+            return 0
+        return sum(1 for p in root.rglob(pattern) if p.is_file())
+
+    expired_sessions = db.query(QAAccount).filter(QAAccount.session_status == "EXPIRED").count()
+    return {
+        "accounts": db.query(QAAccount).count(),
+        "runs": db.query(TestRun).count(),
+        "results": db.query(TestResult).count(),
+        "screenshots": _count_files(shot_dir, "*.png"),
+        "traces": _count_files(trace_dir, "*.zip"),
+        "expired_sessions": expired_sessions,
+        "session_files": _count_files(session_dir, "*.json"),
+        "environments": db.query(Environment).count(),
+        "network_profiles": db.query(NetworkProfile).count(),
+        "task_presets": db.query(TaskPreset).count(),
+        "admins": db.query(AdminUser).count(),
+        "preserved_note": "Admin / Environment / NetworkProfile / TaskPreset / system settings / .env 永不默认删除",
+    }
+
+
+@router.post("/data-management/cleanup", response_model=DataCleanupOut)
+def data_management_cleanup(body: DataCleanupIn, db: Session = Depends(get_db), admin: AdminUser = Depends(get_current_admin)):
+    """Selective cleanup. Never deletes Admin/Environment/NetworkProfile/TaskPreset/system/.env by default.
+    Requires confirm=true. Always creates a DB file backup first when any delete flag is set.
+    """
+    if not body.confirm:
+        raise HTTPException(400, "confirm=true required")
+    flags = {
+        "accounts": body.accounts,
+        "runs": body.runs,
+        "results": body.results,
+        "screenshots": body.screenshots,
+        "traces": body.traces,
+        "expired_sessions": body.expired_sessions,
+    }
+    if not any(flags.values()):
+        raise HTTPException(400, "select at least one cleanup target")
+
+    import shutil
+    from datetime import datetime as _dt
+
+    settings = get_settings()
+    backup_path = None
+    # Backup SQLite DB file
+    db_url = settings.database_url
+    if db_url.startswith("sqlite"):
+        if db_url.startswith("sqlite:////"):
+            db_file = Path("/" + db_url[len("sqlite:////"):])
+        else:
+            db_file = Path(db_url[len("sqlite:///"):])
+        if db_file.is_file():
+            bak_dir = db_file.parent / "backups"
+            bak_dir.mkdir(parents=True, exist_ok=True)
+            ts = _dt.now().strftime("%Y%m%d-%H%M%S")
+            backup_path = str(bak_dir / f"payment_qa-pre-cleanup-{ts}.db")
+            shutil.copy2(db_file, backup_path)
+            # also copy -wal/-shm if present
+            for suf in ("-wal", "-shm"):
+                side = Path(str(db_file) + suf)
+                if side.is_file():
+                    shutil.copy2(side, backup_path + suf)
+
+    deleted: dict = {}
+    preserved = [
+        "AdminUser", "Environment", "NetworkProfile", "TaskPreset",
+        "RunnerSettings", "SystemSettings", "PageMapping", "PayrailsConfig", ".env",
+    ]
+
+    if body.results or body.runs:
+        # results first (FK)
+        if body.results and not body.runs:
+            n = db.query(TestResult).delete()
+            deleted["results"] = n
+        if body.runs:
+            n_res = db.query(TestResult).delete()
+            n_run = db.query(TestRun).delete()
+            deleted["results"] = n_res
+            deleted["runs"] = n_run
+        elif body.results:
+            pass
+
+    if body.accounts:
+        # clear session files referenced
+        for a in db.query(QAAccount).all():
+            if a.session_path:
+                try:
+                    Path(a.session_path).unlink(missing_ok=True)
+                except Exception:
+                    pass
+        deleted["accounts"] = db.query(QAAccount).delete()
+
+    if body.expired_sessions:
+        n = 0
+        for a in db.query(QAAccount).filter(QAAccount.session_status == "EXPIRED").all():
+            if a.session_path:
+                try:
+                    Path(a.session_path).unlink(missing_ok=True)
+                except Exception:
+                    pass
+            a.session_status = "NONE"
+            a.session_path = None
+            a.session_updated_at = None
+            n += 1
+        deleted["expired_sessions"] = n
+
+    db.commit()
+
+    if body.screenshots:
+        root = Path(settings.screenshot_dir)
+        n = 0
+        if root.exists():
+            for p in root.rglob("*"):
+                if p.is_file():
+                    try:
+                        p.unlink()
+                        n += 1
+                    except Exception:
+                        pass
+        deleted["screenshots"] = n
+
+    if body.traces:
+        root = Path(settings.log_dir) / "traces"
+        n = 0
+        if root.exists():
+            for p in root.rglob("*.zip"):
+                try:
+                    p.unlink()
+                    n += 1
+                except Exception:
+                    pass
+        deleted["traces"] = n
+
+    _log(db, "INFO", "data-management", f"cleanup done: {deleted}", {"backup": backup_path})
+    return DataCleanupOut(
+        ok=True,
+        backup_path=backup_path,
+        deleted=deleted,
+        preserved=preserved,
+        message=f"清理完成。备份: {backup_path or '(非 SQLite 跳过文件备份)'}",
+    )
+
+
+
 @router.get("/version")
 def api_version():
-    return {"version": get_settings().app_version or "1.3.0", "name": "Payment QA Runner"}
+    return {"version": get_settings().app_version or "1.3.1", "name": "Payment QA Runner"}
 
 
 

@@ -1,6 +1,6 @@
 # Payment QA Runner
 
-**Version 1.3.0** — 一键浏览器 QA 自动化 Runner。普通用户：导入账号 → 选任务 → 点开始；真实 Chromium 跑冒烟/沙箱测试。
+**Version 1.3.1** — 一键浏览器 QA 自动化 Runner。普通用户：导入账号 → 选任务 → 点开始；真实 Chromium 跑冒烟/沙箱测试。
 
 仓库：**Public** https://github.com/c114/payment-qa-runner
 
@@ -117,5 +117,5 @@ cd ../frontend && npm install && npm run lint && npm run build
 
 ```bash
 curl -s http://127.0.0.1:8000/api/health
-# {"mode":"LIVE"|"MOCK","version":"1.3.0", ...}
+# {"mode":"LIVE"|"MOCK","version":"1.3.1", ...}
 ```

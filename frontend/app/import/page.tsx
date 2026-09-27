@@ -44,7 +44,12 @@ export default function ImportPage() {
     <div className="space-y-4">
       <div className="card space-y-3">
         <h2 className="font-semibold">统一导入中心 · Unified Import</h2>
-        <p className="help-field">流程：选择类型 → 下载模板 / 粘贴 → 解析预览 → 校验 → 确认导入。CVV 列会被忽略；账号密码加密存储。</p>
+        <p className="help-field">
+          <b>是什么</b>：统一导入中心（账号/代理/用例/映射/环境）。<br/>
+          <b>是否必填</b>：按类型不同；账号需 email+password。<br/>
+          <b>账号示例</b>：<code>email@example.com|password</code> 与 <code>email@example.com----password</code>。<br/>
+          <b>怎么操作</b>：选类型 → 下载模板/粘贴 → 解析预览 → 确认导入。CVV 列忽略；密码加密存储。
+        </p>
         <div className="flex flex-wrap gap-2 items-center">
           <select value={kind} onChange={(e) => { setKind(e.target.value as any); setPreview(null); setResult(null); }}>
             {TYPES.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}

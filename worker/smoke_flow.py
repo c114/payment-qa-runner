@@ -156,6 +156,152 @@ async def detect_login_problems(page) -> Optional[str]:
 
 
 
+
+
+async def login_form_visible(page) -> bool:
+    """True when email + password inputs are visible (Log in button optional)."""
+    try:
+        email_ok = False
+        for sel in (
+            "input[type='email']", "input[name='email']", "#email",
+            "input[autocomplete='username']", "input[autocomplete='email']",
+        ):
+            try:
+                loc = page.locator(sel)
+                if await loc.count() > 0 and await loc.first.is_visible():
+                    email_ok = True
+                    break
+            except Exception:
+                continue
+        if not email_ok:
+            try:
+                for name in ("Email", "email", "E-mail"):
+                    loc = page.get_by_label(name, exact=False)
+                    if await loc.count() > 0 and await loc.first.is_visible():
+                        email_ok = True
+                        break
+            except Exception:
+                pass
+        if not email_ok:
+            try:
+                loc = page.get_by_placeholder("Email", exact=False)
+                if await loc.count() > 0 and await loc.first.is_visible():
+                    email_ok = True
+            except Exception:
+                pass
+        if not email_ok:
+            try:
+                loc = page.get_by_role("textbox", name="Email")
+                if await loc.count() > 0 and await loc.first.is_visible():
+                    email_ok = True
+            except Exception:
+                pass
+
+        pw_ok = False
+        for sel in ("input[type='password']", "#password", "input[name='password']"):
+            try:
+                loc = page.locator(sel)
+                if await loc.count() > 0 and await loc.first.is_visible():
+                    pw_ok = True
+                    break
+            except Exception:
+                continue
+
+        return bool(email_ok and pw_ok)
+    except Exception as e:
+        msg = str(e).lower()
+        if any(x in msg for x in ("execution context was destroyed", "navigation", "target closed")):
+            raise
+        return False
+
+
+def _is_nav_transient(exc: BaseException) -> bool:
+    msg = str(exc).lower()
+    return any(
+        x in msg
+        for x in (
+            "execution context was destroyed",
+            "navigation",
+            "target closed",
+            "target page, context or browser has been closed",
+        )
+    )
+
+
+async def wait_for_page_state(page, log, timeout_sec: float = 12.0, poll_ms: int = 350) -> str:
+    """Poll until a stable classified page state.
+
+    Returns one of:
+      TARGET_PAGE_READY | AUTH_REQUIRED | CAPTCHA | LOGIN_BLOCKED | BAD_CREDENTIALS | PAGE_ERROR
+    Mid-navigation exceptions are treated as transient (no screenshot).
+    """
+    deadline = time.time() + float(timeout_sec)
+    last_note = ""
+    while time.time() < deadline:
+        try:
+            if await payments_page_ready(page):
+                log("wait_for_page_state → TARGET_PAGE_READY")
+                return "TARGET_PAGE_READY"
+
+            url = ""
+            try:
+                url = page.url or ""
+            except Exception:
+                url = ""
+
+            form_ok = False
+            try:
+                form_ok = await login_form_visible(page)
+            except Exception as e:
+                if _is_nav_transient(e):
+                    last_note = str(e)
+                    log(f"wait_for_page_state: transient during form detect, continue")
+                    await page.wait_for_timeout(int(poll_ms))
+                    continue
+                raise
+
+            if url_is_login(url) or form_ok:
+                problem = await detect_login_problems(page)
+                if problem:
+                    log(f"wait_for_page_state → {problem}")
+                    return problem
+                log("wait_for_page_state → AUTH_REQUIRED")
+                return "AUTH_REQUIRED"
+
+            problem = await detect_login_problems(page)
+            if problem:
+                log(f"wait_for_page_state → {problem}")
+                return problem
+
+        except Exception as e:
+            last_note = str(e)
+            if _is_nav_transient(e):
+                log(f"wait_for_page_state: transient nav ({type(e).__name__}), continue")
+                await page.wait_for_timeout(int(poll_ms))
+                continue
+            log(f"wait_for_page_state: poll error {e}")
+
+        await page.wait_for_timeout(int(poll_ms))
+
+    log(f"wait_for_page_state timeout → PAGE_ERROR ({last_note or 'unrecognized state'})")
+    return "PAGE_ERROR"
+
+
+async def _page_meta(page) -> tuple:
+    """Safe URL/title after a stable state (never during navigation)."""
+    url = None
+    title = None
+    try:
+        url = page.url
+    except Exception:
+        pass
+    try:
+        title = await page.title()
+    except Exception:
+        pass
+    return url, title
+
+
 async def do_login(page, email: str, password: str, log: Callable[[str], None], timeout_ms: float = 30000) -> Optional[str]:
     """Fill login form. Returns error code or None on apparent success."""
     await dismiss_cookie_if_blocking(page, log)
@@ -311,79 +457,102 @@ async def run_smoke(
                 return _err(code, str(e), t0, timeline, shots, trace=str(trace_path))
 
             await dismiss_cookie_if_blocking(page, log)
-            timeline.append({"step": "navigate", "ok": True, "url": page.url})
+            try:
+                timeline.append({"step": "navigate", "ok": True, "url": page.url})
+            except Exception:
+                timeline.append({"step": "navigate", "ok": True})
 
-            # Case A: already on payments
-            if await payments_page_ready(page):
+            # Wait through delayed redirects / white-screen mid-nav before classifying
+            set_step("Waiting page state")
+            state = await wait_for_page_state(page, log, timeout_sec=min(12.0, timeout_sec), poll_ms=350)
+            set_step(state)
+            final_url, page_title = await _page_meta(page)
+
+            if state == "TARGET_PAGE_READY":
                 log("TARGET_PAGE_READY (existing session)")
-                set_step("TARGET_PAGE_READY")
                 actual = "TARGET_PAGE_READY"
                 status = "PASS"
                 error_code = "TARGET_PAGE_READY"
-            elif url_is_login(page.url) or await _visible_text(page, "Log in") or await _visible_text(page, "Log In"):
+            elif state == "AUTH_REQUIRED":
                 log("Redirected to login / AUTH_REQUIRED")
-                set_step("AUTH_REQUIRED")
-                timeline.append({"step": "auth_required", "ok": True})
+                timeline.append({"step": "auth_required", "ok": True, "url": final_url})
 
                 if loaded_state and storage_state_path:
-                    # SESSION_EXPIRED — clear and login once
                     log("SESSION_EXPIRED — clearing prior storage_state")
                     try:
                         storage_state_path.unlink(missing_ok=True)
                     except Exception:
                         pass
-                    # continue to login once
 
                 if not email or not password:
                     await _safe_shot(page, screenshot_dir, "no_account", shots)
                     await context.tracing.stop(path=str(trace_path))
                     await browser.close()
-                    return _err("ACCOUNT_NOT_READY", "Login required but no credentials", t0, timeline, shots, trace=str(trace_path))
+                    return _err(
+                        "ACCOUNT_NOT_READY", "Login required but no credentials",
+                        t0, timeline, shots, trace=str(trace_path),
+                        final_url=final_url, page_title=page_title, current_step="AUTH_REQUIRED",
+                    )
 
                 login_err = await do_login(page, email, password, log, timeout_ms)
                 if login_err:
                     log(f"Login failed: {login_err}")
+                    fu, pt = await _page_meta(page)
                     await _safe_shot(page, screenshot_dir, f"login_{login_err.lower()}", shots)
                     await context.tracing.stop(path=str(trace_path))
                     await browser.close()
-                    return _err(login_err, login_err, t0, timeline, shots, trace=str(trace_path))
+                    return _err(
+                        login_err, login_err, t0, timeline, shots, trace=str(trace_path),
+                        final_url=fu, page_title=pt, current_step="login",
+                    )
 
-                # Re-open TARGET
+                # Re-open TARGET and wait again (same delayed-redirect waiter)
                 set_step("Re-open TARGET")
                 log("Re-opening TARGET after login")
                 target = start_url
                 if is_local_fixture:
                     target = resolve_fixture_url()
-                await page.goto(target, wait_until="domcontentloaded", timeout=timeout_ms)
+                try:
+                    await page.goto(target, wait_until="domcontentloaded", timeout=timeout_ms)
+                except Exception as e:
+                    fu, pt = await _page_meta(page)
+                    await _safe_shot(page, screenshot_dir, "reopen_fail", shots)
+                    await context.tracing.stop(path=str(trace_path))
+                    await browser.close()
+                    return _err(
+                        "NETWORK_ERROR", str(e), t0, timeline, shots, trace=str(trace_path),
+                        final_url=fu, page_title=pt, current_step="Re-open TARGET",
+                    )
                 await dismiss_cookie_if_blocking(page, log)
 
-                # Wait for Payment methods + Add card
-                ready = False
-                for _ in range(20):
-                    if await payments_page_ready(page):
-                        ready = True
-                        break
-                    # still on login?
-                    if url_is_login(page.url):
-                        problem = await detect_login_problems(page)
-                        if problem:
-                            await _safe_shot(page, screenshot_dir, problem.lower(), shots)
-                            await context.tracing.stop(path=str(trace_path))
-                            await browser.close()
-                            return _err(problem, problem, t0, timeline, shots, trace=str(trace_path))
-                    await page.wait_for_timeout(500)
+                state2 = await wait_for_page_state(page, log, timeout_sec=min(12.0, timeout_sec), poll_ms=350)
+                set_step(state2)
+                final_url, page_title = await _page_meta(page)
 
-                if not ready:
+                if state2 == "TARGET_PAGE_READY":
+                    log("TARGET_PAGE_READY")
+                    actual = "TARGET_PAGE_READY"
+                    status = "PASS"
+                    error_code = "TARGET_PAGE_READY"
+                elif state2 in ("CAPTCHA", "LOGIN_BLOCKED", "BAD_CREDENTIALS"):
+                    await _safe_shot(page, screenshot_dir, state2.lower(), shots)
+                    await context.tracing.stop(path=str(trace_path))
+                    await browser.close()
+                    return _err(
+                        state2, state2, t0, timeline, shots, trace=str(trace_path),
+                        final_url=final_url, page_title=page_title, current_step=state2,
+                    )
+                else:
+                    # AUTH_REQUIRED again or PAGE_ERROR after login
+                    code = "PAGE_ERROR"
+                    msg = f"Payment methods not visible after login (state={state2})"
                     await _safe_shot(page, screenshot_dir, "not_ready", shots)
                     await context.tracing.stop(path=str(trace_path))
                     await browser.close()
-                    return _err("PAGE_ERROR", "Payment methods not visible after login", t0, timeline, shots, trace=str(trace_path))
-
-                log("TARGET_PAGE_READY")
-                set_step("TARGET_PAGE_READY")
-                actual = "TARGET_PAGE_READY"
-                status = "PASS"
-                error_code = "TARGET_PAGE_READY"
+                    return _err(
+                        code, msg, t0, timeline, shots, trace=str(trace_path),
+                        final_url=final_url, page_title=page_title, current_step=state2,
+                    )
 
                 # Save storage_state
                 if storage_state_path:
@@ -397,14 +566,25 @@ async def run_smoke(
                         log(f"storage_state saved: {storage_state_path.name}")
                     except Exception as e:
                         log(f"storage_state save failed: {e}")
-            else:
-                # Unexpected page
-                await _safe_shot(page, screenshot_dir, "unexpected", shots)
-                problem = await detect_login_problems(page)
-                code = problem or "PAGE_ERROR"
+            elif state in ("CAPTCHA", "LOGIN_BLOCKED", "BAD_CREDENTIALS"):
+                await _safe_shot(page, screenshot_dir, state.lower(), shots)
                 await context.tracing.stop(path=str(trace_path))
                 await browser.close()
-                return _err(code, f"Unexpected page: {page.url}", t0, timeline, shots, trace=str(trace_path))
+                return _err(
+                    state, state, t0, timeline, shots, trace=str(trace_path),
+                    final_url=final_url, page_title=page_title, current_step=state,
+                )
+            else:
+                # PAGE_ERROR only after waiter timeout / unrecognized stable state
+                await _safe_shot(page, screenshot_dir, "unexpected", shots)
+                await context.tracing.stop(path=str(trace_path))
+                await browser.close()
+                return _err(
+                    "PAGE_ERROR",
+                    f"Unexpected page after wait: {final_url}",
+                    t0, timeline, shots, trace=str(trace_path),
+                    final_url=final_url, page_title=page_title, current_step="PAGE_ERROR",
+                )
 
             # Optional Add card modal (NO fill)
             if status == "PASS" and open_modal:
@@ -452,6 +632,16 @@ async def run_smoke(
         "trace_path": str(trace_path) if trace_path.exists() else None,
         "saved_state": saved_state,
         "is_mock": False,
+        "final_url": None,
+        "page_title": None,
+        "current_step": actual,
+        "detail": {
+            "error_code": error_code,
+            "error_message": error_message,
+            "current_step": actual,
+            "final_url": None,
+            "page_title": None,
+        },
     }
 
 
@@ -465,7 +655,26 @@ async def _safe_shot(page, screenshot_dir: Path, tag: str, shots: List[str]) -> 
         pass
 
 
-def _err(code: str, msg: str, t0: float, timeline: list, shots: list, trace: str = None) -> dict:
+def _err(
+    code: str,
+    msg: str,
+    t0: float,
+    timeline: list,
+    shots: list,
+    trace: str = None,
+    *,
+    final_url: str = None,
+    page_title: str = None,
+    current_step: str = None,
+) -> dict:
+    step = current_step or code
+    detail = {
+        "error_code": code,
+        "error_message": msg,
+        "current_step": step,
+        "final_url": final_url,
+        "page_title": page_title,
+    }
     return {
         "expected": "TARGET_PAGE_READY",
         "actual": code,
@@ -479,4 +688,8 @@ def _err(code: str, msg: str, t0: float, timeline: list, shots: list, trace: str
         "trace_path": trace,
         "saved_state": False,
         "is_mock": False,
+        "final_url": final_url,
+        "page_title": page_title,
+        "current_step": step,
+        "detail": detail,
     }

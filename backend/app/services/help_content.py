@@ -34,6 +34,14 @@ HELP = {
         "zh": "默认间隔 5s、超时 30s、网络重试 2、超时重试 1、拒付重试 0。账号连续失败达阈值后冷却并切换下一 READY 账号。每 N 用例或 PAGE_ERROR/BROWSER_CRASH/NETWORK_ERROR 时重启浏览器。",
         "en": "Defaults: interval 5s, timeout 30s, network retry 2, timeout retry 1, decline retry 0.",
     },
+    "data-management": {
+        "zh": "数据管理：按需清理账号/运行/结果/截图/traces/过期会话。删除前自动备份 DB。永不默认删除 Admin/Environment/NetworkProfile/TaskPreset/系统设置/.env。",
+        "en": "Data management: selective cleanup. Auto DB backup before delete. Never deletes Admin/Environment/NetworkProfile/TaskPreset/settings/.env by default.",
+    },
+    "start": {
+        "zh": "导入账号（email|password 或 email----password）→ 选任务 → 开始。LIVE=真实 Chromium；MOCK 横幅出现时不是真实 PASS。",
+        "en": "Import accounts → select task → START. LIVE uses real Chromium; MOCK banner means not a live PASS.",
+    },
     "default": {
         "zh": "Payment QA Runner — 沙箱支付自动化 QA 工具。详见 Help Center。",
         "en": "Payment QA Runner — sandbox payment automation QA tool.",

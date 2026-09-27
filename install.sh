@@ -5,7 +5,7 @@ set -euo pipefail
 
 REPO_SLUG="c114/payment-qa-runner"
 INSTALL_DIR="${INSTALL_DIR:-/opt/payment-qa-runner}"
-VERSION="1.3.0"
+VERSION="1.3.1"
 
 need_root() {
   if [[ "${EUID}" -ne 0 ]]; then

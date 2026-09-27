@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
 class TokenOut(BaseModel):
@@ -187,8 +187,8 @@ class TestRunOut(BaseModel):
     environment_id: int
     account_id: Optional[int] = None
     network_profile_id: Optional[int] = None
-    proxy_pool_ids: List[int]
-    case_ids: List[str]
+    proxy_pool_ids: List[Any] = Field(default_factory=list)
+    case_ids: List[Any] = Field(default_factory=list)
     run_count: str
     status: str
     progress_done: int
@@ -198,7 +198,7 @@ class TestRunOut(BaseModel):
     error_count: int
     current_case_id: Optional[str] = None
     task_preset_id: Optional[int] = None
-    account_ids: List[int] = Field(default_factory=list)
+    account_ids: List[Any] = Field(default_factory=list)
     current_account: Optional[str] = None
     current_step: Optional[str] = None
     run_mode: str = "workflow"
@@ -210,6 +210,21 @@ class TestRunOut(BaseModel):
     created_at: datetime
     model_config = {"from_attributes": True}
 
+    @field_validator("proxy_pool_ids", "case_ids", "account_ids", "live_log", mode="before")
+    @classmethod
+    def _none_to_list(cls, v):
+        return [] if v is None else v
+
+    @field_validator("run_mode", mode="before")
+    @classmethod
+    def _none_run_mode(cls, v):
+        return "workflow" if v is None or v == "" else v
+
+    @field_validator("is_mock", mode="before")
+    @classmethod
+    def _none_is_mock(cls, v):
+        return False if v is None else bool(v)
+
 
 class TestResultOut(BaseModel):
     id: int
@@ -220,14 +235,25 @@ class TestResultOut(BaseModel):
     actual: str
     status: str
     duration_ms: float
-    steps: List[Any]
-    screenshot_paths: List[str]
+    steps: List[Any] = Field(default_factory=list)
+    screenshot_paths: List[str] = Field(default_factory=list)
     account_email: Optional[str] = None
     network_profile: Optional[str] = None
     error_message: Optional[str] = None
     pan_masked: Optional[str] = None
+    detail: Optional[Dict[str, Any]] = None
     created_at: datetime
     model_config = {"from_attributes": True}
+
+    @field_validator("steps", "screenshot_paths", mode="before")
+    @classmethod
+    def _none_lists(cls, v):
+        return [] if v is None else v
+
+    @field_validator("detail", mode="before")
+    @classmethod
+    def _none_detail(cls, v):
+        return {} if v is None else v
 
 
 class RunnerSettingsIn(BaseModel):
@@ -348,3 +374,21 @@ class QuickRunStatusOut(BaseModel):
     run_mode: str = "smoke"
     error_code: Optional[str] = None
     error_message_zh: Optional[str] = None
+
+
+class DataCleanupIn(BaseModel):
+    confirm: bool = False
+    accounts: bool = False
+    runs: bool = False
+    results: bool = False
+    screenshots: bool = False
+    traces: bool = False
+    expired_sessions: bool = False
+
+
+class DataCleanupOut(BaseModel):
+    ok: bool
+    backup_path: Optional[str] = None
+    deleted: Dict[str, Any] = Field(default_factory=dict)
+    preserved: List[str] = Field(default_factory=list)
+    message: str = ""

@@ -24,7 +24,12 @@ export default function EnvironmentsPage() {
     <div className="space-y-4">
       <div className="card space-y-2">
         <h2 className="font-semibold">新建环境 · Sandbox/Staging/Internal only</h2>
-        <p className="help-field">Preply.com 仅作 UI 参考。allowed_domains 为浏览器白名单。Same-Origin 部署无需配置 CORS 公网 IP。</p>
+        <p className="help-field">
+          <b>是什么</b>：沙箱/预发/内网 QA 环境（Base URL + 域名白名单）。Preply.com 仅作 UI 参考。<br/>
+          <b>是否必填</b>：name、base_url、allowed_domains、env_type 必填。<br/>
+          <b>格式/示例</b>：Base URL <code>https://qa.example.test</code>；allowed_domains 逗号分隔 <code>qa.example.test,cdn.example.test</code>。<br/>
+          <b>怎么操作</b>：填写 → 创建 → Test 探测；可导入/导出 JSON。Same-Origin 部署无需配置 CORS 公网 IP。
+        </p>
         <div className="grid md:grid-cols-2 gap-2">
           <input placeholder="名称" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
           <input placeholder="Base URL" value={form.base_url} onChange={(e) => setForm({ ...form, base_url: e.target.value })} />

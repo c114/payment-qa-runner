@@ -68,6 +68,9 @@ def ensure_schema() -> None:
             ("is_mock", "BOOLEAN"),
             ("error_code", "VARCHAR(64)"),
         ],
+        "test_results": [
+            ("detail", "JSON"),
+        ],
     }
     with engine.begin() as conn:
         for table, additions in cols.items():
@@ -87,3 +90,13 @@ def ensure_schema() -> None:
                 if name in existing:
                     continue
                 conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {typ}"))
+        # Normalize legacy NULL list/bool columns on test_runs
+        try:
+            conn.execute(text("UPDATE test_runs SET account_ids = '[]' WHERE account_ids IS NULL"))
+            conn.execute(text("UPDATE test_runs SET proxy_pool_ids = '[]' WHERE proxy_pool_ids IS NULL"))
+            conn.execute(text("UPDATE test_runs SET case_ids = '[]' WHERE case_ids IS NULL"))
+            conn.execute(text("UPDATE test_runs SET live_log = '[]' WHERE live_log IS NULL"))
+            conn.execute(text("UPDATE test_runs SET run_mode = 'workflow' WHERE run_mode IS NULL OR run_mode = ''"))
+            conn.execute(text("UPDATE test_runs SET is_mock = 0 WHERE is_mock IS NULL"))
+        except Exception:
+            pass

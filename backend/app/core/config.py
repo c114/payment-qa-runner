@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     backend_host: str = "0.0.0.0"
     backend_port: int = 8000
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
-    app_version: str = "1.3.0"
+    app_version: str = "1.3.1"
 
     playwright_mock: int = 0
     live_testing_enabled: bool = False

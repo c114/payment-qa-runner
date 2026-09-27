@@ -236,6 +236,7 @@ class TestResult(Base):
     network_profile: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     pan_masked: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    detail: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

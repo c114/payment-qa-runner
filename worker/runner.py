@@ -583,6 +583,19 @@ async def process_smoke_run(
         elif forbid_proxy_rotate_on(result.get("actual") or ""):
             append_live_log(run, f"No proxy rotate on {result.get('actual')} (policy)")
 
+        detail = result.get("detail") or {}
+        if not isinstance(detail, dict):
+            detail = {}
+        detail = {
+            **detail,
+            "error_code": result.get("error_code") or detail.get("error_code"),
+            "error_message": result.get("error_message") or detail.get("error_message"),
+            "current_step": result.get("current_step") or detail.get("current_step"),
+            "final_url": result.get("final_url") or detail.get("final_url"),
+            "page_title": result.get("page_title") or detail.get("page_title"),
+            "trace_path": result.get("trace_path") or detail.get("trace_path"),
+            "screenshot_paths": result.get("screenshot_paths") or [],
+        }
         tr = TestResult(
             run_id=run.id,
             case_id=(task.key if task else "smoke"),
@@ -597,6 +610,7 @@ async def process_smoke_run(
             network_profile=network.name if network else None,
             error_message=result.get("error_message"),
             pan_masked=None,
+            detail=detail,
         )
         # Attach trace path into steps meta
         if result.get("trace_path"):

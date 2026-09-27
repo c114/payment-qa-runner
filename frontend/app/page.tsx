@@ -170,7 +170,12 @@ export default function StartPage() {
       {/* Import */}
       <div className="card space-y-3">
         <h3 className="font-semibold">1. 导入测试账号</h3>
-        <p className="text-xs text-surface-muted">格式：email|password 或 email----password（每行一个）</p>
+        <p className="help-field">
+          <b>是什么</b>：QA 测试账号（邮箱+密码），加密存库，用于登录冒烟。<br/>
+          <b>是否必填</b>：生产冒烟必填；本地夹具任务可不选。<br/>
+          <b>格式/示例</b>：每行一个 — <code>email@example.com|password</code> 或 <code>email@example.com----password</code>；也支持 <code>name|email|password</code>。<br/>
+          <b>怎么操作</b>：粘贴 → 预览 → 导入并加密保存 → 在下方勾选账号。
+        </p>
         <textarea
           className="input w-full h-28 font-mono text-sm"
           placeholder={"user@example.com|Secret123\nuser2@example.com----Secret456"}
@@ -221,6 +226,11 @@ export default function StartPage() {
       {/* Task + network */}
       <div className="card space-y-3">
         <h3 className="font-semibold">3. 选择任务</h3>
+        <p className="help-field">
+          <b>是什么</b>：管理员预置的一键任务（冒烟 / 本地夹具 / 支付填表）。<br/>
+          <b>是否必填</b>：必填。<br/>
+          <b>怎么操作</b>：下拉选择 → 可选网络 Profile → 点「开始」。LIVE 时跑真实 Chromium；MOCK 横幅出现时结果不是真实 PASS。
+        </p>
         <select
           className="input w-full"
           value={taskId}
